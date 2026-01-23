@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "signature": "ed25519_signature_placeholder",
+    "timestamp": "2023-12-01T10:00:00Z",
+    "checksum": "sha256_checksum_placeholder",
+    "author": "ESP32_Secure_System",
+    "description": "Simple LED blinking program"
+  },
+  "config": {
+    "runtime_limit_ms": 5000,
+    "memory_limit_kb": 25,
+    "permissions": ["gpio", "time"],
+    "hot_reload_enabled": true,
+    "max_loop_iterations": 10000
+  },
+  "imports": [
+    "import machine",
+    "import time"
+  ],
+  "functions": [
+    "def initialize_led(pin_number):",
+    "    led = machine.Pin(pin_number, machine.Pin.OUT)",
+    "    return led",
+    "",
+    "def blink_led(led, duration):",
+    "    led.value(1)",
+    "    time.sleep(duration)",
+    "    led.value(0)",
+    "    time.sleep(duration)",
+    "",
+    "def fade_led(led, steps=10):",
+    "    # Simulated PWM effect with digital pin",
+    "    for i in range(steps):",
+    "        led.value(1)",
+    "        time.sleep(0.05)",
+    "        led.value(0)",
+    "        time.sleep(0.05)"
+  ],
+  "setup": [
+    "# Initialize LED on GPIO 2 (built-in LED on many ESP32 boards)",
+    "led_pin = 2",
+    "led = initialize_led(led_pin)",
+    "print('LED initialized on pin:', led_pin)"
+  ],
+  "loop_logic": [
+    "# Blink the LED with 500ms interval",
+    "blink_led(led, 0.5)",
+    "",
+    "# Every 10 cycles, do a fade effect",
+    "if iteration_count % 10 == 0:",
+    "    print('Fading LED...')",
+    "    fade_led(led)",
+    "",
+    "# Increment iteration counter",
+    "iteration_count = iteration_count + 1 if 'iteration_count' in globals() else 1",
+    "",
+    "# Optional: print status every 5 cycles",
+    "if iteration_count % 5 == 0:",
+    "    print('Iteration:', iteration_count)"
+  ]
+}
