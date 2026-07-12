@@ -8,24 +8,28 @@ This project implements a secure system for ESP32 using MicroPython that allows 
 
 The system consists of the following components:
 
-1. **CryptoManager** - Handles encryption/decryption using AES-GCM
+1. **CryptoManager** - Handles encryption/decryption using AES-CTR + HMAC-SHA256 (Encrypt-then-MAC)
 2. **ObjectFactory** - Creates dynamic objects with method injection from JSON
-3. **ExecutionSandbox** - Executes code in a secure, limited environment
+3. **ExecutionSandbox** - Executes code in a secure, limited environment with SafeImporter
 4. **ProgramLoader** - Loads and validates programs from encrypted JSON files
-5. **FastJSONLoader** - Optimized JSON parser for quick loading
-6. **LineBasedCompiler** - Efficiently compiles line-based code
-7. **ExecutionEngine** - Executes programs with caching and hot-swapping
-8. **LightweightSecurity** - Verifies digital signatures and manages permissions
-9. **MemoryOptimizer** - Manages memory and optimizes resource usage
+5. **FastJSONLoader** - Optimized JSON parser with newline preservation and syntax validation
+6. **LineBasedCompiler** - Efficiently compiles line-based code with safe indent normalization
+7. **ExecutionEngine** - Executes programs with caching, hot-swapping, and thread-based timeout
+8. **LightweightSecurity** - HMAC-SHA256 signature verification with replay protection
+9. **MemoryOptimizer** - Manages memory with pre-execution checking and runtime monitoring
 
 ## Features
 
 ### Security
-- AES-GCM encryption for JSON files
-- Ed25519-like signature verification
-- Isolated execution in sandbox
-- Limited API access to prevent dangerous operations
-- Key rotation capabilities
+- AES-CTR + HMAC-SHA256 encryption (Encrypt-then-MAC scheme)
+- HMAC-SHA256 signature verification with replay protection (nonce/timestamp)
+- Isolated execution in sandbox with SafeImporter (module whitelist)
+- Blocked dangerous builtins: __import__, eval, exec, compile, getattr, setattr, delattr
+- Constant-time comparison for tag verification (prevents timing attacks)
+- Thread-based timeout mechanism for interrupting hung code
+- Pre-execution memory checking and runtime monitoring
+- Safe indent normalization (prevents tabs/spaces mixing)
+- Structured logging with levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 ### Performance
 - Load to execution time < 500ms
@@ -136,12 +140,14 @@ performance_tests.run_performance_tests()
 
 ## Security Measures
 
-1. **Encryption**: All program files are AES-GCM encrypted
-2. **Signature Verification**: Digital signatures ensure integrity
-3. **Sandbox Execution**: Code runs in limited environment
-4. **Permission Control**: Restricted access to dangerous functions
-5. **Resource Limits**: Time and memory constraints enforced
+1. **Encryption**: All program files are AES-CTR + HMAC-SHA256 encrypted (Encrypt-then-MAC)
+2. **Signature Verification**: HMAC-SHA256 signatures with replay protection (nonce/timestamp)
+3. **Sandbox Execution**: Code runs in limited environment with SafeImporter (module whitelist)
+4. **Permission Control**: Restricted access to dangerous functions (blocked: __import__, eval, exec, compile, getattr, setattr, delattr)
+5. **Resource Limits**: Time and memory constraints enforced with thread-based timeout
 6. **Input Sanitization**: All inputs are validated and cleaned
+7. **Timing Attack Protection**: Constant-time comparison for tag verification
+8. **Memory Safety**: Pre-execution memory checking and runtime monitoring
 
 ## Performance Benchmarks
 
@@ -182,9 +188,21 @@ The system includes comprehensive testing modules:
 - Memory constraints on ESP32 limit program complexity
 - No real-time OS features for hard timing guarantees
 
+## Recent Security Fixes (v2.0)
+
+This version includes critical security fixes:
+
+- **crypto_manager.py**: Replaced fake AES-GCM with proper AES-CTR + HMAC-SHA256 (Encrypt-then-MAC), added constant-time comparison
+- **lightweight_security.py**: Replaced broken Ed25519 with HMAC-SHA256 signature, removed insecure `_derive_private_from_public()`, added replay protection
+- **execution_sandbox.py**: Removed `__import__` from allowed builtins, implemented SafeImporter with module whitelist, blocked getattr/setattr/delattr
+- **execution_engine.py**: Added thread-based timeout mechanism for interrupting hung code
+- **memory_optimizer.py**: Added pre-execution memory checking and runtime monitoring with RealTimeMemoryMonitor
+- **fast_json_loader.py**: Fixed newline preservation in combine_code_sections, added syntax validation
+- **line_compiler.py**: Implemented safe indent normalization with GCD-based detection, prevents tabs/spaces mixing
+- **main.py**: Replaced broad exception handling with specific exceptions, implemented Logger class with levels
+
 ## Future Improvements
 
-- Full Ed25519 signature implementation when supported in MicroPython
 - Enhanced memory management algorithms
 - More sophisticated permission systems
 - Additional encryption algorithms support

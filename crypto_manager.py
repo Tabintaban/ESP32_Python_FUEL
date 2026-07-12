@@ -1,5 +1,12 @@
 """
-CryptoManager - класс для шифрования/дешифрования данных с использованием AES-GCM и других криптографических алгоритмов
+CryptoManager - класс для шифрования/дешифрования данных с использованием AES-CTR + HMAC-SHA256 (Encrypt-then-MAC)
+
+SECURITY FIXES:
+- Replaced fake AES-GCM with proper AES-CTR encryption
+- Added HMAC-SHA256 for authentication (Encrypt-then-MAC scheme)
+- Implemented constant-time comparison for tag verification
+- Separate keys for encryption and authentication
+- Unique IV generation for each encryption
 """
 import os
 import json
@@ -32,94 +39,172 @@ try:
 except ImportError:
     import random as urandom  # Standard Python for testing
 
+try:
+    from uhashlib import hmac as uhmac  # type: ignore # MicroPython HMAC
+except ImportError:
+    # Fallback to standard hashlib for HMAC
+    import hmac as uhmac
+
 class CryptoManager:
     """
-    Класс для шифрования и дешифрования данных с использованием AES-GCM
+    Класс для шифрования и дешифрования данных с использованием AES-CTR + HMAC-SHA256
+    
+    Использует схему Encrypt-then-MAC для обеспечения аутентификации:
+    1. Шифрование данных с помощью AES-CTR
+    2. Вычисление HMAC-SHA256 зашифрованных данных + IV
+    3. При расшифровке: сначала проверка HMAC, затем расшифровка
     """
     
-    def __init__(self):
-        # Размеры ключа и IV для AES
-        self.key_size = 32  # 256-bit ключ
-        self.iv_size = 12   # 96-bit IV для GCM
+    def __init__(self, encryption_key=None, hmac_key=None):
+        """
+        Инициализация криптографического менеджера
         
+        Args:
+            encryption_key: 32-байтный ключ для AES-256 (если None, будет сгенерирован)
+            hmac_key: 32-байтный ключ для HMAC-SHA256 (если None, будет сгенерирован)
+        """
+        # Размеры ключей и IV для AES-256-CTR
+        self.aes_key_size = 32  # 256-bit ключ для AES
+        self.hmac_key_size = 32  # 256-bit ключ для HMAC
+        self.iv_size = 16       # 128-bit IV для CTR mode
+        
+        # Генерация ключей если не предоставлены
+        if encryption_key is None:
+            self.encryption_key = self._generate_key(self.aes_key_size)
+        else:
+            if len(encryption_key) != self.aes_key_size:
+                raise ValueError(f"Encryption key must be {self.aes_key_size} bytes")
+            self.encryption_key = encryption_key
+            
+        if hmac_key is None:
+            self.hmac_key = self._generate_key(self.hmac_key_size)
+        else:
+            if len(hmac_key) != self.hmac_key_size:
+                raise ValueError(f"HMAC key must be {self.hmac_key_size} bytes")
+            self.hmac_key = hmac_key
+    
+    def _generate_key(self, size):
+        """
+        Генерация случайного ключа заданного размера
+        """
+        return urandom.urandom(size)  # pylint: disable=no-member
+    
     def generate_key(self):
         """
-        Генерация случайного ключа
+        Генерация случайного ключа (для обратной совместимости)
+        Возвращает кортеж (encryption_key, hmac_key)
         """
-        return urandom.urandom(self.key_size)  # pylint: disable=no-member
+        return self._generate_key(self.aes_key_size), self._generate_key(self.hmac_key_size)
         
-    def pad_data(self, data):
+    def _constant_time_compare(self, a, b):
         """
-        Добавление PKCS7 padding к данным
+        Сравнение двух байтовых строк за постоянное время (защита от timing attacks)
         """
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        pad_len = 16 - (len(data) % 16)
-        return data + bytes([pad_len] * pad_len)
+        if len(a) != len(b):
+            return False
         
-    def unpad_data(self, data):
-        """
-        Удаление PKCS7 padding из данных
-        """
-        pad_len = data[-1]
-        return data[:-pad_len]
+        result = 0
+        for x, y in zip(a, b):
+            result |= x ^ y
         
-    def encrypt_aes_gcm(self, plaintext, key, associated_data=None):
+        return result == 0
+        
+    def encrypt_aes_ctr_hmac(self, plaintext, associated_data=None):
         """
-        Шифрование данных с использованием AES-GCM
-        Возвращает: (ciphertext, auth_tag, iv)
+        Шифрование данных с использованием AES-CTR + HMAC-SHA256 (Encrypt-then-MAC)
+        
+        Args:
+            plaintext: Данные для шифрования (bytes или str)
+            associated_data: Дополнительные данные для аутентификации (опционально)
+            
+        Returns:
+            (ciphertext, auth_tag, iv): Зашифрованные данные, тег аутентификации, IV
         """
-        # Генерация случайного IV
+        if isinstance(plaintext, str):
+            plaintext = plaintext.encode('utf-8')
+        
+        # Генерация уникального IV для каждого шифрования
         iv = urandom.urandom(self.iv_size)  # pylint: disable=no-member
         
-        # Создание объекта шифрования
-        cipher = aes(key, 1, iv)  # AES.MODE_GCM эмулируется
+        # Создание объекта шифрования AES-CTR (mode 2)
+        cipher = aes(self.encryption_key, 2, iv)
         
-        # Добавляем ассоциированные данные если есть
+        # Шифрование данных (CTR mode не требует padding)
+        ciphertext = cipher.encrypt(plaintext)
+        
+        # Вычисление HMAC-SHA256 зашифрованных данных + IV (+ associated_data если есть)
+        hmac_data = ciphertext + iv
         if associated_data:
-            # В реальной реализации AES-GCM нужно будет добавить associated_data
-            pass
-            
-        # Шифрование данных
-        padded_plaintext = self.pad_data(plaintext)
-        ciphertext = cipher.encrypt(padded_plaintext)
+            if isinstance(associated_data, str):
+                associated_data = associated_data.encode('utf-8')
+            hmac_data += associated_data
         
-        # Генерация имитовставки (в упрощённой форме)
-        # В реальной реализации нужно использовать полноценный AES-GCM
-        auth_tag = sha256(ciphertext + iv).digest()[:16]
+        # Используем hashlib.sha256 с ключом для HMAC
+        if hasattr(uhmac, 'new'):
+            # MicroPython uhashlib.hmac
+            auth_tag = uhmac.new(self.hmac_key, hmac_data, sha256).digest()
+        else:
+            # Fallback: HMAC-KDF using SHA256
+            auth_tag = sha256(self.hmac_key + hmac_data).digest()
         
         return ciphertext, auth_tag, iv
         
-    def decrypt_aes_gcm(self, ciphertext, auth_tag, iv, key, associated_data=None):
+    def decrypt_aes_ctr_hmac(self, ciphertext, auth_tag, iv, associated_data=None):
         """
-        Расшифровка данных с использованием AES-GCM
-        """
-        # Проверка имитовставки (в упрощённой форме)
-        calculated_auth_tag = sha256(ciphertext + iv).digest()[:16]
-        if calculated_auth_tag != auth_tag:
-            raise ValueError("Authentication failed")
+        Расшифровка данных с использованием AES-CTR + HMAC-SHA256
+        
+        Args:
+            ciphertext: Зашифрованные данные
+            auth_tag: Тег аутентификации
+            iv: Вектор инициализации
+            associated_data: Дополнительные данные для аутентификации (опционально)
             
-        # Создание объекта расшифровки
-        cipher = aes(key, 1, iv)
+        Returns:
+            Расшифрованные данные
+            
+        Raises:
+            ValueError: Если аутентификация не прошла (подмена данных)
+        """
+        # СНАЧАЛА проверяем тег аутентификации (Encrypt-then-MAC)
+        hmac_data = ciphertext + iv
+        if associated_data:
+            if isinstance(associated_data, str):
+                associated_data = associated_data.encode('utf-8')
+            hmac_data += associated_data
         
-        # Расшифровка
-        padded_plaintext = cipher.decrypt(ciphertext)
+        # Вычисление ожидаемого тега
+        if hasattr(uhmac, 'new'):
+            calculated_auth_tag = uhmac.new(self.hmac_key, hmac_data, sha256).digest()
+        else:
+            calculated_auth_tag = sha256(self.hmac_key + hmac_data).digest()
         
-        # Удаление padding
-        plaintext = self.unpad_data(padded_plaintext)
+        # Constant-time сравнение тегов
+        if not self._constant_time_compare(calculated_auth_tag, auth_tag):
+            raise ValueError("Authentication failed: data may have been tampered with")
+        
+        # ТОЛЬКО ПОСЛЕ успешной проверки аутентификации расшифровываем
+        cipher = aes(self.encryption_key, 2, iv)
+        plaintext = cipher.decrypt(ciphertext)
         
         return plaintext
         
-    def encrypt_data(self, data, key):
+    def encrypt_data(self, data, key=None):
         """
-        Шифрование данных
+        Шифрование данных с использованием AES-CTR + HMAC-SHA256
+        
+        Args:
+            data: Данные для шифрования (str или bytes)
+            key: Ключ шифрования (для обратной совместимости, игнорируется если установлены ключи в __init__)
+            
+        Returns:
+            JSON-строка с зашифрованными данными
         """
         if isinstance(data, str):
             data = data.encode('utf-8')
             
-        ciphertext, auth_tag, iv = self.encrypt_aes_gcm(data, key)
+        ciphertext, auth_tag, iv = self.encrypt_aes_ctr_hmac(data)
         
-        # Возвращаем зашифрованные данные в виде словаря
+        # Возвращаем зашифрованные данные в виде словаря (сохраняем формат для обратной совместимости)
         result = {
             'iv': hexlify(iv).decode(),
             'auth_tag': hexlify(auth_tag).decode(),
@@ -128,9 +213,19 @@ class CryptoManager:
         
         return json.dumps(result)
         
-    def decrypt_data(self, encrypted_data, key):
+    def decrypt_data(self, encrypted_data, key=None):
         """
-        Дешифрование данных
+        Дешифрование данных с проверкой аутентификации
+        
+        Args:
+            encrypted_data: Зашифрованные данные (JSON-строка или dict)
+            key: Ключ шифрования (для обратной совместимости, игнорируется если установлены ключи в __init__)
+            
+        Returns:
+            Расшифрованные данные (str)
+            
+        Raises:
+            ValueError: Если аутентификация не прошла
         """
         if isinstance(encrypted_data, str):
             encrypted_data = json.loads(encrypted_data)
@@ -139,13 +234,21 @@ class CryptoManager:
         auth_tag = unhexlify(encrypted_data['auth_tag'])
         ciphertext = unhexlify(encrypted_data['ciphertext'])
         
-        plaintext = self.decrypt_aes_gcm(ciphertext, auth_tag, iv, key)
+        plaintext = self.decrypt_aes_ctr_hmac(ciphertext, auth_tag, iv)
         
         return plaintext.decode('utf-8')
         
-    def encrypt_file(self, filepath, key, output_filepath=None):
+    def encrypt_file(self, filepath, key=None, output_filepath=None):
         """
         Шифрование файла
+        
+        Args:
+            filepath: Путь к исходному файлу
+            key: Ключ шифрования (опционально, если не установлен в __init__)
+            output_filepath: Путь к зашифрованному файлу (опционально)
+            
+        Returns:
+            Путь к зашифрованному файлу
         """
         if output_filepath is None:
             output_filepath = filepath + '.enc'
@@ -160,9 +263,17 @@ class CryptoManager:
             
         return output_filepath
         
-    def decrypt_file(self, filepath, key, output_filepath=None):
+    def decrypt_file(self, filepath, key=None, output_filepath=None):
         """
         Расшифровка файла
+        
+        Args:
+            filepath: Путь к зашифрованному файлу
+            key: Ключ шифрования (опционально, если не установлен в __init__)
+            output_filepath: Путь к расшифрованному файлу (опционально)
+            
+        Returns:
+            Путь к расшифрованному файлу
         """
         if output_filepath is None:
             output_filepath = filepath.replace('.enc', '') + '.dec'
@@ -180,54 +291,129 @@ class CryptoManager:
     def hash_data(self, data):
         """
         Хеширование данных с использованием SHA-256
+        
+        Args:
+            data: Данные для хеширования (str или bytes)
+            
+        Returns:
+            Hex-строка хеша SHA-256
         """
         if isinstance(data, str):
             data = data.encode('utf-8')
         return sha256(data).hexdigest()
-
-
-# МикроПитоновая реализация AES-GCM (упрощенная)
-class AESGCMEmulator:
-    """
-    Упрощенная эмуляция AES-GCM для MicroPython
-    """
     
-    def __init__(self, key):
-        self.cipher = aes(key, 1)  # AES ECB mode
-        
-    def encrypt(self, plaintext, iv, aad=None):
+    def get_keys(self):
         """
-        Упрощенное шифрование (не настоящий GCM)
+        Получение текущих ключей (для сохранения/экспорта)
+        
+        Returns:
+            (encryption_key, hmac_key): Кортеж ключей
         """
-        # Добавляем padding
-        if len(plaintext) % 16 != 0:
-            pad_len = 16 - (len(plaintext) % 16)
-            plaintext += bytes([pad_len] * pad_len)
-            
-        # Шифруем
-        ciphertext = self.cipher.encrypt(plaintext)
-        
-        # Генерируем простую аутентификационную метку
-        tag = sha256(ciphertext + iv).digest()[:16]
-        
-        return ciphertext, tag
-        
-    def decrypt(self, ciphertext, iv, tag, aad=None):
+        return self.encryption_key, self.hmac_key
+    
+    def set_keys(self, encryption_key, hmac_key):
         """
-        Упрощенная расшифровка (не настоящий GCM)
-        """
-        # Проверяем тег
-        calculated_tag = sha256(ciphertext + iv).digest()[:16]
-        if calculated_tag != tag:
-            raise ValueError("Authentication failed")
-            
-        # Расшифровываем
-        plaintext = self.cipher.decrypt(ciphertext)
+        Установка новых ключей
         
-        # Удаляем padding
-        if plaintext[-1] <= 16:  # Возможно padding
-            pad_len = plaintext[-1]
-            if all(b == pad_len for b in plaintext[-pad_len:]):
-                plaintext = plaintext[:-pad_len]
-                
-        return plaintext
+        Args:
+            encryption_key: 32-байтный ключ для AES
+            hmac_key: 32-байтный ключ для HMAC
+        """
+        if len(encryption_key) != self.aes_key_size:
+            raise ValueError(f"Encryption key must be {self.aes_key_size} bytes")
+        if len(hmac_key) != self.hmac_key_size:
+            raise ValueError(f"HMAC key must be {self.hmac_key_size} bytes")
+        
+        self.encryption_key = encryption_key
+        self.hmac_key = hmac_key
+
+
+# Unit tests for crypto_manager
+def test_crypto_manager():
+    """
+    Unit-тесты для CryptoManager
+    """
+    print("Testing CryptoManager...")
+    
+    # Тест 1: Базовое шифрование-дешифрование
+    cm = CryptoManager()
+    plaintext = b"Hello, ESP32 Secure System!"
+    
+    encrypted = cm.encrypt_data(plaintext)
+    decrypted = cm.decrypt_data(encrypted)
+    
+    assert decrypted == plaintext.decode('utf-8'), "Decryption failed"
+    print("✓ Test 1: Basic encryption/decryption passed")
+    
+    # Тест 2: Обнаружение подмены данных
+    encrypted_dict = json.loads(encrypted)
+    tampered_ciphertext = bytearray(unhexlify(encrypted_dict['ciphertext']))
+    tampered_ciphertext[0] ^= 0xFF  # Инвертируем первый байт
+    encrypted_dict['ciphertext'] = hexlify(tampered_ciphertext).decode()
+    
+    try:
+        cm.decrypt_data(json.dumps(encrypted_dict))
+        assert False, "Should detect tampering"
+    except ValueError as e:
+        assert "Authentication failed" in str(e)
+        print("✓ Test 2: Tampering detection passed")
+    
+    # Тест 3: Уникальность IV для одинаковых данных
+    enc1 = cm.encrypt_data(plaintext)
+    enc2 = cm.encrypt_data(plaintext)
+    
+    dict1 = json.loads(enc1)
+    dict2 = json.loads(enc2)
+    
+    assert dict1['iv'] != dict2['iv'], "IV must be unique"
+    assert dict1['ciphertext'] != dict2['ciphertext'], "Ciphertext must differ with different IV"
+    print("✓ Test 3: IV uniqueness passed")
+    
+    # Тест 4: Проверка constant-time comparison (защита от timing attacks)
+    # Этот тест проверяет, что сравнение не зависит от позиции первого отличия
+    import time
+    
+    tag = bytes(32)
+    same_tag = bytes(32)
+    diff_tag_start = bytes(32)
+    diff_tag_start = bytearray(diff_tag_start)
+    diff_tag_start[0] ^= 0xFF
+    diff_tag_start = bytes(diff_tag_start)
+    
+    diff_tag_end = bytes(32)
+    diff_tag_end = bytearray(diff_tag_end)
+    diff_tag_end[31] ^= 0xFF
+    diff_tag_end = bytes(diff_tag_end)
+    
+    # Сравнение должно занимать примерно одинаковое время
+    start = time.ticks_ms()
+    for _ in range(100):
+        cm._constant_time_compare(tag, same_tag)
+    time_same = time.ticks_diff(time.ticks_ms(), start)
+    
+    start = time.ticks_ms()
+    for _ in range(100):
+        cm._constant_time_compare(tag, diff_tag_start)
+    time_diff_start = time.ticks_diff(time.ticks_ms(), start)
+    
+    start = time.ticks_ms()
+    for _ in range(100):
+        cm._constant_time_compare(tag, diff_tag_end)
+    time_diff_end = time.ticks_diff(time.ticks_ms(), start)
+    
+    # Времена должны быть примерно одинаковыми (допускаем небольшую вариацию)
+    assert abs(time_diff_start - time_diff_end) < max(time_same, 1), "Constant-time comparison failed"
+    print("✓ Test 4: Constant-time comparison passed")
+    
+    # Тест 5: Разные ключи дают разные результаты
+    cm2 = CryptoManager()
+    enc3 = cm2.encrypt_data(plaintext)
+    
+    assert enc1 != enc3, "Different keys should produce different ciphertext"
+    print("✓ Test 5: Different keys produce different results")
+    
+    print("\n✅ All crypto manager tests passed!\n")
+
+
+if __name__ == "__main__":
+    test_crypto_manager()

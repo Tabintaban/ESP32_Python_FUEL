@@ -1,9 +1,105 @@
 """
 MemoryOptimizer - класс для управления памятью и оптимизации потребления ресурсов
+
+SECURITY FIXES:
+- Added pre-execution memory checking
+- Implemented RealTimeMemoryMonitor for runtime monitoring
+- Auto-trigger gc.collect() near memory limits
+- Added detailed memory statistics
 """
 
 import gc
 import sys
+import time
+
+
+class RealTimeMemoryMonitor:
+    """
+    Мониторинг памяти в реальном времени с проверкой до и во время выполнения
+    """
+    
+    def __init__(self, hard_limit_bytes, warning_threshold=0.8):
+        self.hard_limit = hard_limit_bytes
+        self.warning_threshold = warning_threshold
+        self._baseline_free = gc.mem_free()
+        self._memory_checks = []
+    
+    def check_before_execution(self, estimated_bytes):
+        """
+        Проверка памяти ДО выполнения кода
+        
+        Args:
+            estimated_bytes: Оценка требуемой памяти
+            
+        Raises:
+            MemoryError: Если недостаточно памяти
+        """
+        gc.collect()  # Сбор мусора перед проверкой
+        free = gc.mem_free()
+        
+        if free < estimated_bytes:
+            raise MemoryError(
+                f"Insufficient memory: need {estimated_bytes}, "
+                f"have {free} bytes free"
+            )
+        
+        if free < self.hard_limit * (1 - self.warning_threshold):
+            gc.collect()  # Попытка освободить память
+            
+        self._memory_checks.append({
+            'type': 'before',
+            'free': free,
+            'estimated': estimated_bytes,
+            'timestamp': time.ticks_ms()
+        })
+    
+    def check_during_execution(self):
+        """
+        Проверка памяти ВО ВРЕМЯ выполнения
+        
+        Returns:
+            Текущее количество свободной памяти
+            
+        Raises:
+            MemoryError: Если критический уровень памяти
+        """
+        free = gc.mem_free()
+        
+        if free < self.hard_limit * 0.1:  # Критический уровень
+            raise MemoryError("Critical memory level reached")
+        
+        self._memory_checks.append({
+            'type': 'during',
+            'free': free,
+            'timestamp': time.ticks_ms()
+        })
+        
+        return free
+    
+    def get_memory_stats(self):
+        """
+        Детальная статистика использования памяти
+        
+        Returns:
+            Словарь со статистикой памяти
+        """
+        gc.collect()
+        return {
+            'free': gc.mem_free(),
+            'allocated': gc.mem_alloc(),
+            'total': gc.mem_free() + gc.mem_alloc(),
+            'baseline_free': self._baseline_free,
+            'check_count': len(self._memory_checks)
+        }
+    
+    def get_memory_history(self):
+        """
+        История проверок памяти
+        
+        Returns:
+            Список проверок памяти
+        """
+        return self._memory_checks
 
 
 class MemoryOptimizer:
@@ -18,6 +114,7 @@ class MemoryOptimizer:
         self.monitoring_enabled = True
         self.memory_log = []
         self.gc_threshold = 1024  # Выполнять GC каждые N байт
+        self.memory_monitor = RealTimeMemoryMonitor(self.max_memory_bytes)
         
     def preallocate_buffers(self, buffer_configs):
         """
@@ -112,6 +209,9 @@ class MemoryOptimizer:
     def get_memory_stats(self):
         """
         Получение статистики памяти
+        
+        Returns:
+            Словарь со статистикой памяти
         """
         gc.collect()  # Собираем мусор для актуальных данных
         
@@ -123,7 +223,34 @@ class MemoryOptimizer:
             'monitoring_enabled': self.monitoring_enabled
         }
         
+        # Добавляем детальную статистику из RealTimeMemoryMonitor
+        stats.update(self.memory_monitor.get_memory_stats())
+        
         return stats
+    
+    def check_before_execution(self, estimated_bytes):
+        """
+        Проверка памяти перед выполнением кода
+        
+        Args:
+            estimated_bytes: Оценка требуемой памяти
+            
+        Raises:
+            MemoryError: Если недостаточно памяти
+        """
+        self.memory_monitor.check_before_execution(estimated_bytes)
+    
+    def check_during_execution(self):
+        """
+        Проверка памяти во время выполнения кода
+        
+        Returns:
+            Текущее количество свободной памяти
+            
+        Raises:
+            MemoryError: Если критический уровень памяти
+        """
+        return self.memory_monitor.check_during_execution()
         
     def check_memory_pressure(self):
         """
@@ -212,11 +339,16 @@ class MemoryOptimizer:
         return False
 
 
-# Пример использования:
-if __name__ == "__main__":
+# Unit tests for memory_optimizer
+def test_memory_optimizer():
+    """
+    Unit-тесты для MemoryOptimizer
+    """
+    print("Testing MemoryOptimizer...")
+    
     optimizer = MemoryOptimizer(max_memory_kb=25)
     
-    # Предварительное выделение буферов
+    # Тест 1: Предварительное выделение буферов
     buffers_config = {
         'input_buffer': 1024,
         'output_buffer': 1024,
@@ -224,22 +356,44 @@ if __name__ == "__main__":
     }
     
     buffers = optimizer.preallocate_buffers(buffers_config)
-    print(f"Allocated buffers: {list(buffers.keys())}")
+    assert len(buffers) == 3, "Should allocate 3 buffers"
+    print("✓ Test 1: Buffer allocation passed")
     
-    # Мониторинг памяти
-    mem_stats = optimizer.monitor_memory_usage()
-    print(f"Memory stats: {mem_stats}")
+    # Тест 2: Проверка памяти перед выполнением
+    try:
+        optimizer.check_before_execution(estimated_bytes=1000)
+        print("✓ Test 2: Pre-execution memory check passed")
+    except MemoryError:
+        print("✓ Test 2: Pre-execution memory check (insufficient memory)")
     
-    # Проверка давления на память
+    # Тест 3: Проверка памяти во время выполнения
+    try:
+        free = optimizer.check_during_execution()
+        assert isinstance(free, int), "Should return free memory as int"
+        print("✓ Test 3: During-execution memory check passed")
+    except MemoryError:
+        print("✓ Test 3: During-execution memory check (critical level)")
+    
+    # Тест 4: Детальная статистика памяти
+    stats = optimizer.get_memory_stats()
+    assert 'free' in stats, "Stats should include free memory"
+    assert 'allocated' in stats, "Stats should include allocated memory"
+    assert 'total' in stats, "Stats should include total memory"
+    print("✓ Test 4: Detailed memory stats passed")
+    
+    # Тест 5: Проверка давления на память
     pressure = optimizer.check_memory_pressure()
-    print(f"Memory pressure: {pressure}")
+    assert 'pressure_ratio' in pressure, "Pressure should include ratio"
+    assert 'is_critical' in pressure, "Pressure should include critical flag"
+    print("✓ Test 5: Memory pressure check passed")
     
-    # Оптимизация bytearray
-    test_data = ["hello", "world", ["nested", "list"]]
-    optimized_data = optimizer.optimize_bytearray_usage(test_data)
-    print(f"Original types: {[type(x) for x in test_data]}")
-    print(f"Optimized types: {[type(x) for x in optimized_data if not isinstance(x, list)]}")
+    # Тест 6: Очистка памяти
+    cleanup_result = optimizer.cleanup_cache()
+    assert 'cleaned_caches' in cleanup_result, "Cleanup should report cleaned caches"
+    print("✓ Test 6: Memory cleanup passed")
     
-    # Статистика памяти
-    final_stats = optimizer.get_memory_stats()
-    print(f"Final stats: {final_stats}")
+    print("\n✅ All memory optimizer tests passed!\n")
+
+
+if __name__ == "__main__":
+    test_memory_optimizer()

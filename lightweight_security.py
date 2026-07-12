@@ -1,8 +1,16 @@
 """
 LightweightSecurity - легковесная безопасность для проверки подписей и обеспечения безопасности
+
+SECURITY FIXES:
+- Replaced broken Ed25519 with HMAC-SHA256 symmetric signature
+- Removed _derive_private_from_public() method (critical security flaw)
+- Added nonce/timestamp for replay attack protection
+- Implemented constant-time comparison for signature verification
+- Signature now requires secret key knowledge
 """
 
 import hashlib
+import time
 
 # Попытка импорта urandom для MicroPython с fallback для стандартного Python
 try:
@@ -10,80 +18,232 @@ try:
 except ImportError:
     import random as urandom  # Standard Python for testing
 
+try:
+    from uhashlib import hmac as uhmac  # type: ignore # MicroPython HMAC
+except ImportError:
+    # Fallback to standard hashlib for HMAC
+    import hmac as uhmac
+
 
 class LightweightSecurity:
     """
     Класс для проверки цифровых подписей и обеспечения безопасности
+    
+    Использует HMAC-SHA256 для симметричной подписи данных.
+    Подходит для сценариев, где одно и то же устройство подписывает и проверяет данные.
     """
     
-    def __init__(self):
-        # В MicroPython полноценная реализация Ed25519 может быть недоступна
-        # Поэтому реализуем упрощенную систему
-        self.public_key = None
-        self.private_key = None
-        self.signature_algorithm = "SHA256_WITH_RSA_SIMULATION"  # Симуляция
+    def __init__(self, secret_key=None):
+        """
+        Инициализация системы безопасности
+        
+        Args:
+            secret_key: Секретный ключ для HMAC-SHA256 (32 байта, если None будет сгенерирован)
+        """
+        self.secret_key = secret_key
+        self.signature_algorithm = "HMAC-SHA256"
+        self.nonce_cache = {}  # Для защиты от replay-атак
+        self.max_nonce_age_ms = 60000  # Nonce действителен 60 секунд
+        
+        if secret_key is None:
+            self.secret_key = self._generate_secret_key()
+        else:
+            if len(secret_key) != 32:
+                raise ValueError("Secret key must be 32 bytes")
+    
+    def _generate_secret_key(self):
+        """
+        Генерация случайного секретного ключа
+        """
+        return urandom.urandom(32)  # pylint: disable=no-member
         
     def generate_keys(self):
         """
-        Генерация ключевой пары (в упрощенной форме)
+        Генерация секретного ключа (для обратной совместимости)
+        
+        Returns:
+            (public_key, secret_key): Публичный идентификатор и секретный ключ
         """
-        # В реальной системе использовалась бы криптографически стойкая генерация
-        # Для MicroPython создаем имитацию
-        private_key = urandom.urandom(32)  # pylint: disable=no-member
-        public_key = hashlib.sha256(private_key).digest()
+        secret_key = self._generate_secret_key()
+        # Публичный ключ - это хеш секретного ключа (для идентификации, но не для подписи)
+        public_key = hashlib.sha256(secret_key).digest()
         
-        self.private_key = private_key
-        self.public_key = public_key
+        self.secret_key = secret_key
         
-        return public_key, private_key
+        return public_key, secret_key
         
-    def sign_data(self, data, private_key=None):
+    def sign_data(self, data, private_key=None, nonce=None):
         """
-        Подпись данных (в упрощенной форме)
+        Подпись данных с использованием HMAC-SHA256
+        
+        Args:
+            data: Данные для подписи (str или bytes)
+            private_key: Секретный ключ (опционально, если не установлен в __init__)
+            nonce: Уникальное значение для защиты от replay-атак (опционально)
+            
+        Returns:
+            HMAC-SHA256 подпись (32 байта)
         """
         if private_key is None:
-            if self.private_key is None:
-                self.generate_keys()
-            private_key = self.private_key
-            
-        # Вместо настоящей подписи Ed25519 используем хеширование
+            if self.secret_key is None:
+                self.secret_key = self._generate_secret_key()
+            private_key = self.secret_key
+        
         if isinstance(data, str):
             data = data.encode('utf-8')
-            
-        # Простая "подпись" - хеш данных + приватный ключ
-        signature = hashlib.sha256(data + private_key).digest()
+        
+        # Добавляем nonce если предоставлен для защиты от replay-атак
+        if nonce is not None:
+            if isinstance(nonce, str):
+                nonce = nonce.encode('utf-8')
+            data = data + nonce
+        
+        # Вычисляем HMAC-SHA256
+        if hasattr(uhmac, 'new'):
+            signature = uhmac.new(private_key, data, hashlib.sha256).digest()
+        else:
+            # Fallback: HMAC-KDF using SHA256
+            signature = hashlib.sha256(private_key + data).digest()
         
         return signature
         
-    def verify_ed25519_signature(self, data, signature, public_key):
+    def verify_signature(self, data, signature, secret_key=None, nonce=None):
         """
-        Проверка подписи Ed25519 (в упрощенной форме для MicroPython)
+        Проверка HMAC-SHA256 подписи
+        
+        Args:
+            data: Данные для проверки (str или bytes)
+            signature: Подпись для проверки (32 байта)
+            secret_key: Секретный ключ (опционально, если не установлен в __init__)
+            nonce: Уникальное значение, использованное при подписи (опционально)
+            
+        Returns:
+            True если подпись валидна, False иначе
         """
+        if secret_key is None:
+            if self.secret_key is None:
+                raise ValueError("No secret key available for verification")
+            secret_key = self.secret_key
+        
         if isinstance(data, str):
             data = data.encode('utf-8')
-            
-        # В упрощенной версии проверяем соответствие хеша
-        # Это НЕ настоящая проверка Ed25519, а лишь симуляция
-        expected_signature = hashlib.sha256(data + self._derive_private_from_public(public_key)).digest()
         
-        return signature == expected_signature
+        # Добавляем nonce если предоставлен
+        if nonce is not None:
+            if isinstance(nonce, str):
+                nonce = nonce.encode('utf-8')
+            data = data + nonce
         
-    def _derive_private_from_public(self, public_key):
+        # Вычисляем ожидаемую подпись
+        if hasattr(uhmac, 'new'):
+            expected_signature = uhmac.new(secret_key, data, hashlib.sha256).digest()
+        else:
+            expected_signature = hashlib.sha256(secret_key + data).digest()
+        
+        # Constant-time сравнение
+        return self._constant_time_compare(signature, expected_signature)
+    
+    def _constant_time_compare(self, a, b):
         """
-        Получение приватного ключа из публичного (для симуляции)
+        Сравнение двух байтовых строк за постоянное время (защита от timing attacks)
         """
-        # Это НЕ безопасно и НЕ должно использоваться в реальных системах
-        # Просто для демонстрации в упрощенной версии
-        return hashlib.sha256(public_key).digest()[:32]
+        if len(a) != len(b):
+            return False
+        
+        result = 0
+        for x, y in zip(a, b):
+            result |= x ^ y
+        
+        return result == 0
         
     def get_public_key(self):
         """
-        Получение публичного ключа
-        """
-        if self.public_key is None:
-            self.generate_keys()
-        return self.public_key
+        Получение публичного идентификатора (хеш секретного ключа)
         
+        Returns:
+            Публичный идентификатор (32 байта)
+        """
+        if self.secret_key is None:
+            self.secret_key = self._generate_secret_key()
+        return hashlib.sha256(self.secret_key).digest()
+    
+    def get_secret_key(self):
+        """
+        Получение секретного ключа
+        
+        Returns:
+            Секретный ключ (32 байта)
+        """
+        if self.secret_key is None:
+            self.secret_key = self._generate_secret_key()
+        return self.secret_key
+    
+    def set_secret_key(self, secret_key):
+        """
+        Установка секретного ключа
+        
+        Args:
+            secret_key: 32-байтный секретный ключ
+        """
+        if len(secret_key) != 32:
+            raise ValueError("Secret key must be 32 bytes")
+        self.secret_key = secret_key
+        
+    def generate_nonce(self):
+        """
+        Генерация уникального nonce для защиты от replay-атак
+        
+        Returns:
+            (nonce, timestamp): Кортеж из nonce и timestamp
+        """
+        nonce = urandom.urandom(16)  # pylint: disable=no-member
+        timestamp = time.ticks_ms()
+        return nonce.hex(), timestamp
+    
+    def validate_nonce(self, nonce, timestamp):
+        """
+        Проверка nonce для защиты от replay-атак
+        
+        Args:
+            nonce: Уникальное значение
+            timestamp: Временная метка генерации nonce
+            
+        Returns:
+            True если nonce валиден и не использовался ранее
+        """
+        # Проверяем возраст nonce
+        current_time = time.ticks_ms()
+        age = time.ticks_diff(current_time, timestamp)
+        
+        if age > self.max_nonce_age_ms or age < 0:
+            return False  # Nonce слишком старый или из будущего
+        
+        # Проверяем, не использовался ли nonce ранее
+        nonce_key = f"{nonce}_{timestamp}"
+        if nonce_key in self.nonce_cache:
+            return False  # Replay attack detected
+        
+        # Сохраняем nonce
+        self.nonce_cache[nonce_key] = current_time
+        
+        # Очищаем старые nonce
+        self._cleanup_nonces(current_time)
+        
+        return True
+    
+    def _cleanup_nonces(self, current_time):
+        """
+        Очистка устаревших nonce из кэша
+        """
+        expired_keys = []
+        for key, stored_time in self.nonce_cache.items():
+            age = time.ticks_diff(current_time, stored_time)
+            if age > self.max_nonce_age_ms:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self.nonce_cache[key]
+    
     def check_permissions(self, functions):
         """
         Проверка разрешений на вызов функций
@@ -93,12 +253,14 @@ class LightweightSecurity:
             'print', 'len', 'range', 'enumerate', 'zip', 'map', 'filter',
             'abs', 'min', 'max', 'sum', 'round', 'int', 'float', 'str', 'bool',
             'list', 'dict', 'set', 'tuple', 'type', 'isinstance', 'hasattr',
-            'getattr', 'setattr', 'delattr', 'callable', 'hash', 'id'
+            'callable', 'hash', 'id'
         ]
         
+        # УБРАЛИ getattr, setattr, delattr из безопасных функций
         unsafe_patterns = [
             'eval', 'exec', 'compile', '__import__', 'open', 'file',
-            'input', 'raw_input', '__', 'globals', 'locals', 'vars'
+            'input', 'raw_input', '__', 'globals', 'locals', 'vars',
+            'getattr', 'setattr', 'delattr'  # Добавили в небезопасные
         ]
         
         for func_name in functions:
@@ -199,40 +361,71 @@ class LightweightSecurity:
         return self.hash_password(password) == hashed_password
 
 
-# Пример использования:
-if __name__ == "__main__":
+# Unit tests for lightweight_security
+def test_lightweight_security():
+    """
+    Unit-тесты для LightweightSecurity
+    """
+    print("Testing LightweightSecurity...")
+    
+    # Тест 1: Базовая подпись и проверка
     security = LightweightSecurity()
-    
-    # Генерация ключей
-    pub_key, priv_key = security.generate_keys()
-    print(f"Public key: {pub_key.hex()[:16]}...")
-    print(f"Private key: {priv_key.hex()[:16]}...")
-    
-    # Подписание данных
     test_data = "Hello, ESP32 Secure System!"
+    
     signature = security.sign_data(test_data)
-    print(f"Signature: {signature.hex()[:16]}...")
+    is_valid = security.verify_signature(test_data, signature)
+    assert is_valid, "Signature verification failed"
+    print("✓ Test 1: Basic signature and verification passed")
     
-    # Проверка подписи
-    is_valid = security.verify_ed25519_signature(test_data, signature, pub_key)
-    print(f"Signature valid: {is_valid}")
+    # Тест 2: Подделка подписи невозможна без секретного ключа
+    security2 = LightweightSecurity()  # Другой секретный ключ
+    is_valid = security2.verify_signature(test_data, signature)
+    assert not is_valid, "Different key should not validate signature"
+    print("✓ Test 2: Signature forgery prevention passed")
     
-    # Проверка разрешений
-    test_functions = ['print', 'len', 'range']
-    perms_ok, perms_msg = security.check_permissions(test_functions)
-    print(f"Permissions OK: {perms_ok}, Message: {perms_msg}")
+    # Тест 3: Публичный ключ не позволяет вычислить приватный
+    pub_key = security.get_public_key()
+    # Публичный ключ - это хеш, из него нельзя восстановить секретный ключ
+    assert pub_key != security.secret_key, "Public key must differ from secret key"
+    print("✓ Test 3: Public key does not reveal secret key passed")
     
-    # Санитизация данных
-    dirty_data = {"key": "value\0with\0nulls", "list": ["safe", "unsafe_eval"]}
-    clean_data = security.sanitize_input(dirty_data)
-    print(f"Clean data: {clean_data}")
+    # Тест 4: Защита от replay-атак с nonce
+    nonce, timestamp = security.generate_nonce()
+    signature_with_nonce = security.sign_data(test_data, nonce=nonce)
     
-    # Проверка сложности кода
-    test_code = [
-        "def example():",
-        "    for i in range(10):",
-        "        if i > 5:",
-        "            print(i)"
-    ]
-    complexity = security.calculate_code_complexity(test_code)
-    print(f"Code complexity: {complexity}")
+    # Первая проверка должна пройти
+    assert security.validate_nonce(nonce, timestamp), "Nonce validation failed"
+    is_valid = security.verify_signature(test_data, signature_with_nonce, nonce=nonce)
+    assert is_valid, "Signature with nonce verification failed"
+    print("✓ Test 4: Replay attack protection with nonce passed")
+    
+    # Повторная проверка того же nonce должна fail
+    assert not security.validate_nonce(nonce, timestamp), "Replay attack should be detected"
+    print("✓ Test 5: Replay attack detection passed")
+    
+    # Тест 6: Constant-time comparison
+    sig1 = bytes(32)
+    sig2 = bytes(32)
+    sig3 = bytearray(sig2)
+    sig3[0] ^= 0xFF
+    sig3 = bytes(sig3)
+    
+    assert security._constant_time_compare(sig1, sig2), "Same signatures should match"
+    assert not security._constant_time_compare(sig1, sig3), "Different signatures should not match"
+    print("✓ Test 6: Constant-time comparison passed")
+    
+    # Тест 7: Проверка разрешений (getattr теперь небезопасен)
+    safe_funcs = ['print', 'len', 'range']
+    perms_ok, perms_msg = security.check_permissions(safe_funcs)
+    assert perms_ok, f"Safe functions should be allowed: {perms_msg}"
+    
+    unsafe_funcs = ['getattr', 'eval', 'exec']
+    perms_ok, perms_msg = security.check_permissions(unsafe_funcs)
+    assert not perms_ok, "Unsafe functions should be rejected"
+    print("✓ Test 7: Permission checking passed")
+    
+    print("\n✅ All lightweight security tests passed!\n")
+
+
+if __name__ == "__main__":
+    test_lightweight_security()

@@ -1,9 +1,17 @@
 """
 LineBasedCompiler - компилятор для эффективного объединения строк кода и предварительной валидации
+
+SECURITY FIXES:
+- Implemented safe indent normalization with GCD-based detection
+- Prevents mixing tabs and spaces
+- Preserves code semantics during normalization
+- Detects indent size from code (2 vs 4 spaces)
 """
 
 import gc
 import re
+from math import gcd
+import math
 
 
 class LineBasedCompiler:
@@ -57,18 +65,70 @@ class LineBasedCompiler:
         
     def normalize_indents(self, code):
         """
-        Нормализация отступов (используем табуляцию вместо пробелов где возможно)
+        Нормализация отступов БЕЗ изменения семантики
+        
+        Args:
+            code: Код для нормализации
+            
+        Returns:
+            Нормализованный код
+            
+        Raises:
+            IndentationError: Если смешиваются табуляции и пробелы
         """
         lines = code.split('\n')
-        normalized_lines = []
+        normalized = []
+        
+        # Определяем базовый размер отступа (2 или 4 пробела)
+        indent_size = self._detect_indent_size(lines)
         
         for line in lines:
-            if line.strip():  # Не пустая строка
-                # Заменяем 4 пробела на табуляцию
-                line = re.sub(r'^(\s*)', lambda m: m.group(1).replace('    ', '\t'), line)
-            normalized_lines.append(line)
+            if not line.strip():
+                normalized.append('')
+                continue
             
-        return '\n'.join(normalized_lines)
+            # Считаем ведущие пробелы
+            leading_spaces = len(line) - len(line.lstrip(' '))
+            leading_tabs = len(line) - len(line.lstrip('\t'))
+            
+            # НЕ смешиваем табуляции и пробелы
+            if leading_tabs > 0 and leading_spaces > 0:
+                raise IndentationError("Mixed tabs and spaces in indentation")
+            
+            # Конвертируем табуляции в пробелы
+            if leading_tabs > 0:
+                line = ' ' * (leading_tabs * indent_size) + line.lstrip('\t')
+            
+            normalized.append(line)
+        
+        return '\n'.join(normalized)
+    
+    def _detect_indent_size(self, lines):
+        """
+        Определение размера отступа из кода
+        
+        Args:
+            lines: Список строк кода
+            
+        Returns:
+            Размер отступа (2 или 4, по умолчанию 4)
+        """
+        indents = []
+        for line in lines:
+            if line.strip() and line[0] == ' ':
+                indent = len(line) - len(line.lstrip(' '))
+                if indent > 0:
+                    indents.append(indent)
+        
+        if not indents:
+            return 4  # По умолчанию
+        
+        # Находим НОД всех отступов
+        result = indents[0]
+        for indent in indents[1:]:
+            result = gcd(result, indent)
+        
+        return result if result > 0 else 4
         
     def build_executable(self, code_blocks):
         """
@@ -214,40 +274,78 @@ class LineBasedCompiler:
         return '\n'.join(minified_lines)
 
 
-# Пример использования:
-if __name__ == "__main__":
+# Unit tests for line_compiler
+def test_line_compiler():
+    """
+    Unit-тесты для LineBasedCompiler
+    """
+    print("Testing LineBasedCompiler...")
+    
     compiler = LineBasedCompiler()
     
-    # Пример блоков кода
-    code_blocks = {
-        'imports': 'import machine\nimport time',
-        'functions': 'def blink(pin):\n    pin.value(1)\n    time.sleep(0.5)\n    pin.value(0)',
-        'setup': 'led = machine.Pin(2, machine.Pin.OUT)',
-        'loop_logic': 'blink(led)\ntime.sleep(1)'
-    }
-    
-    print("Building executable...")
-    executable = compiler.build_executable(code_blocks)
-    
-    print("Executable keys:", list(executable.keys()))
-    print("Full code length:", len(executable['full_code']))
-    print("Cache stats:", compiler.get_cache_stats())
-    
-    # Тестируем оптимизацию
-    test_code = """
-# This is a comment
+    # Тест 1: Определение размера отступа
+    code_4_spaces = """
 def test():
-    x = 1    # inline comment
-    y = 2
-    return x + y
-    
-# Another comment
-
-z = test()
+    if True:
+        print("test")
 """
+    indent_size = compiler._detect_indent_size(code_4_spaces.split('\n'))
+    assert indent_size == 4, "Should detect 4-space indent"
+    print("✓ Test 1: Indent size detection (4 spaces) passed")
     
-    print("\nOriginal code length:", len(test_code))
-    optimized = compiler.optimize_for_esp32(test_code)
-    print("Optimized code length:", len(optimized))
-    minified = compiler.minify_code(test_code)
-    print("Minified code length:", len(minified))
+    # Тест 2: Определение 2-пробельного отступа
+    code_2_spaces = """
+def test():
+  if True:
+    print("test")
+"""
+    indent_size = compiler._detect_indent_size(code_2_spaces.split('\n'))
+    assert indent_size == 2, "Should detect 2-space indent"
+    print("✓ Test 2: Indent size detection (2 spaces) passed")
+    
+    # Тест 3: Нормализация отступов без смешивания
+    code_mixed = """
+def test():
+    if True:
+        print("test")
+"""
+    normalized = compiler.normalize_indents(code_mixed)
+    assert 'print("test")' in normalized, "Should preserve code content"
+    print("✓ Test 3: Safe indent normalization passed")
+    
+    # Тест 4: Обнаружение смешивания табов и пробелов
+    code_tabs_spaces = """
+def test():
+	if True:
+        print("test")
+"""
+    try:
+        compiler.normalize_indents(code_tabs_spaces)
+        assert False, "Should raise IndentationError for mixed tabs and spaces"
+    except IndentationError:
+        print("✓ Test 4: Mixed tabs/spaces detection passed")
+    
+    # Тест 5: Конвертация табов в пробелы
+    code_tabs = """
+def test():
+	if True:
+		print("test")
+"""
+    normalized = compiler.normalize_indents(code_tabs)
+    # Табы должны быть конвертированы в пробелы
+    assert '\t' not in normalized, "Tabs should be converted to spaces"
+    print("✓ Test 5: Tab to space conversion passed")
+    
+    # Тест 6: Валидация синтаксиса
+    valid_code = "x = 1 + 2"
+    assert compiler.validate_syntax(valid_code), "Valid code should pass validation"
+    
+    invalid_code = "x = 1 +"
+    assert not compiler.validate_syntax(invalid_code), "Invalid code should fail validation"
+    print("✓ Test 6: Syntax validation passed")
+    
+    print("\n✅ All line compiler tests passed!\n")
+
+
+if __name__ == "__main__":
+    test_line_compiler()
