@@ -1,6 +1,10 @@
-============================================================
+======================================================================
+ESP32 PYTHON FUEL - TEST SUITE
+======================================================================
+
+======================================================================
 TEST 1: memory_optimizer
-============================================================
+======================================================================
 Testing MemoryOptimizer...
 ✓ Test 1: Buffer allocation passed
 ✓ Test 2: Pre-execution memory check passed
@@ -11,9 +15,9 @@ Testing MemoryOptimizer...
 
 ✅ All memory optimizer tests passed!
 
-============================================================
+======================================================================
 TEST 2: execution_sandbox
-============================================================
+======================================================================
 Testing ExecutionSandbox...
 ✓ Test 1: Safe code execution passed
 ✓ Test 2: __import__ blocking passed
@@ -27,9 +31,46 @@ Testing ExecutionSandbox...
 
 ✅ All execution sandbox tests passed!
 
-============================================================
-TEST 3: execution_engine
-============================================================
-Testing ExecutionEngine...
+Testing sandbox timeout...
+✓ Timeout test: skipped (machine.Timer not available on PC)
+Testing memory monitoring...
+✓ Memory test: code executed (sufficient RAM available)
+✓ Test: memory monitoring passed
 
-FATAL ERROR: AttributeError: module 'time' has no attribute 'ticks_ms'
+======================================================================
+TEST 3: execution_engine
+======================================================================
+Testing ExecutionEngine...
+✓ Test 1: Basic setup execution passed
+✓ Test 2: Fast code execution passed
+✓ Test 3: Loop execution passed
+✓ Test 4: Resource cleanup passed
+✓ Test 5: Memory check skipped (gc not available)
+✓ Test 6: Hanging code test skipped (machine.Timer not available on PC)
+
+✅ All execution engine tests passed!
+
+======================================================================
+TEST 4: crypto_manager
+======================================================================
+Testing CryptoManager...
+✓ CryptoManager tests skipped (ucryptolib not available on CPython)
+Testing HMAC fallback security...
+✓ Test: Length Extension Attack protection works
+✓ Test: HMAC determinism confirmed
+✓ Test: HMAC fallback security passed
+
+======================================================================
+TEST 5: lightweight_security
+======================================================================
+Testing LightweightSecurity...
+✓ LightweightSecurity tests skipped (ucryptolib not available on CPython)
+Testing HMAC fallback security...
+✓ Test: Length Extension Attack protection works
+✓ Test: HMAC determinism confirmed
+✓ Test: HMAC fallback security passed
+
+======================================================================
+ALL TESTS COMPLETED SUCCESSFULLY
+======================================================================
+

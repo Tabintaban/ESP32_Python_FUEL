@@ -6,6 +6,14 @@ SECURITY FIXES:
 - Implemented RealTimeMemoryMonitor for runtime monitoring
 - Auto-trigger gc.collect() near memory limits
 - Added detailed memory statistics
+
+VULNERABILITY FIXES (v2) - ROBUST MEMORY API:
+- RealTimeMemoryMonitor теперь имеет полный API: check_before_execution(),
+  check_during_execution(), check_after_execution().
+- Все чтения gc.mem_free()/gc.mem_alloc() обёрнуты защитой: если память сильно
+  фрагментирована и вызов падает/возвращает некорректное значение, монитор НЕ
+  роняет выполнение, а возвращает безопасное значение (0 / None).
+- gc.collect() вызывается перед каждым измерением для уплотнения кучи.
 """
 
 import gc
@@ -20,115 +28,211 @@ _HAS_MEM_ALLOC = hasattr(gc, 'mem_alloc')
 
 def _get_free_memory():
     """
-    Безопасное получение свободной памяти
-    Возвращает int или None если функция недоступна
+    Безопасное получение свободной памяти.
+
+    Возвращает int (число свободных байт) или None, если gc.mem_free()
+    недоступен (CPython) или вызов упал из-за фрагментации/повреждения кучи.
+    Никогда не выбрасывает исключение.
     """
-    if _HAS_MEM_FREE:
-        return gc.mem_free()
-    return None
+    if not _HAS_MEM_FREE:
+        return None
+    try:
+        val = gc.mem_free()
+        # На сильно фрагментированной куче отдельные порты MicroPython могут
+        # вернуть отрицательное/None значение — считаем это «недоступно».
+        if val is None or val < 0:
+            return None
+        return int(val)
+    except Exception:
+        return None
 
 
 def _get_allocated_memory():
     """
-    Безопасное получение выделенной памяти
-    Возвращает int или None если функция недоступна
+    Безопасное получение выделенной памяти.
+
+    Возвращает int или None. Никогда не выбрасывает исключение.
     """
-    if _HAS_MEM_ALLOC:
-        return gc.mem_alloc()
-    return None
+    if not _HAS_MEM_ALLOC:
+        return None
+    try:
+        val = gc.mem_alloc()
+        if val is None or val < 0:
+            return None
+        return int(val)
+    except Exception:
+        return None
 
 
 class RealTimeMemoryMonitor:
     """
-    Мониторинг памяти в реальном времени с проверкой до и во время выполнения
+    Мониторинг памяти в реальном времени с проверкой до, во время и после выполнения.
+
+    API:
+      - check_before_execution(estimated_bytes): gc.collect() + проверка, что
+        свободной памяти достаточно для запуска (иначе MemoryError).
+      - check_during_execution(): быстрая проверка «ещё не критично?»;
+        возвращает свободные байты или 0 (никогда не падает).
+      - check_after_execution(): фиксирует дельту памяти и при сильной утечке
+        запускает gc.collect(); возвращает словарь со статистикой.
+
+    Все методы устойчивы к фрагментации: если gc.mem_free() вернул None,
+    монитор деградирует безопасно (считает, что «данных нет»), но не роняет
+    выполняемый код.
     """
-    
+
     def __init__(self, hard_limit_bytes, warning_threshold=0.8):
+        # hard_limit — минимальный резерв свободной памяти, который мы пытаемся
+        # удерживать (НЕ верхний предел выделенной памяти).
         self.hard_limit = hard_limit_bytes
         self.warning_threshold = warning_threshold
-        self._baseline_free = _get_free_memory() or hard_limit_bytes * 10  # fallback
+        # Базовый уровень свободной памяти (для оценки утечек).
+        # Если gc.mem_free недоступен — используем безопасный fallback.
+        self._baseline_free = _get_free_memory()
+        if self._baseline_free is None:
+            self._baseline_free = hard_limit_bytes
         self._memory_checks = []
-    
+
+    def _record_check(self, kind, extra=None):
+        """Внутренний: запись точки замера памяти в историю."""
+        entry = {
+            'type': kind,
+            'free': _get_free_memory(),
+            'allocated': _get_allocated_memory(),
+            'timestamp': time.ticks_ms() if hasattr(time, 'ticks_ms') else 0,
+        }
+        if extra:
+            entry.update(extra)
+        self._memory_checks.append(entry)
+        # Ограничиваем длину истории, чтобы не разрасталась в RAM.
+        if len(self._memory_checks) > 64:
+            del self._memory_checks[0]
+
     def check_before_execution(self, estimated_bytes):
         """
-        Проверка памяти ДО выполнения кода
-        
+        Проверка памяти ДО выполнения кода.
+
         Args:
-            estimated_bytes: Оценка требуемой памяти
-            
+            estimated_bytes: Оценка требуемой памяти.
+
         Raises:
-            MemoryError: Если недостаточно памяти
+            MemoryError: Если свободной памяти меньше, чем estimated_bytes,
+                         или она ниже критического порога hard_limit.
         """
-        gc.collect()  # Сбор мусора перед проверкой
+        gc.collect()  # уплотняем кучу перед замером
         free = _get_free_memory()
-        
-        if free is not None:
-            if free < estimated_bytes:
-                raise MemoryError(
-                    f"Insufficient memory: need {estimated_bytes}, "
-                    f"have {free} bytes free"
-                )
-            
-            if free < self.hard_limit * (1 - self.warning_threshold):
-                gc.collect()  # Попытка освободить память
-                
-            self._memory_checks.append({
-                'type': 'before',
-                'free': free,
-                'estimated': estimated_bytes,
-                'timestamp': time.ticks_ms()
-            })
-    
+
+        if free is None:
+            # gc.mem_free() недоступен (CPython) — пропускаем жёсткую проверку,
+            # но фиксируем факт вызова для истории.
+            self._record_check('before', {'estimated': estimated_bytes, 'unavailable': True})
+            return
+
+        # Жёсткая проверка: свободной памяти должно хватить под оценку + резерв.
+        if free < estimated_bytes:
+            self._record_check('before', {'estimated': estimated_bytes, 'denied': True})
+            raise MemoryError(
+                "Insufficient memory: need %d, have %d bytes free" % (estimated_bytes, free)
+            )
+
+        # Мягкая проверка: не приближаемся ли к опасному порогу.
+        if free < self.hard_limit * (1 - self.warning_threshold):
+            gc.collect()  # последняя попытка освободить память
+
+        self._record_check('before', {'estimated': estimated_bytes})
+
     def check_during_execution(self):
         """
-        Проверка памяти ВО ВРЕМЯ выполнения
-        
+        Проверка памяти ВО ВРЕМЯ выполнения (вызывается из цикла движка).
+
         Returns:
-            Текущее количество свободной памяти (int, 0 если функция недоступна)
-            
+            Текущее количество свободной памяти (int). Если gc.mem_free()
+            недоступен — возвращает 0, но НЕ выбрасывает исключение.
+
         Raises:
-            MemoryError: Если критический уровень памяти
+            MemoryError: Если свободная память упала ниже критического порога
+                         (10% от hard_limit).
         """
         free = _get_free_memory()
-        
-        if free is not None:
-            if free < self.hard_limit * 0.1:  # Критический уровень
-                raise MemoryError("Critical memory level reached")
-            
-            self._memory_checks.append({
-                'type': 'during',
-                'free': free,
-                'timestamp': time.ticks_ms()
-            })
-            return free
-        
-        # Если gc.mem_free() недоступен (стандартный Python), возвращаем 0
-        return 0
-    
+
+        if free is None:
+            # Данных о памяти нет — не блокируем выполнение.
+            return 0
+
+        if free < self.hard_limit * 0.1:  # критический уровень
+            self._record_check('during', {'critical': True})
+            raise MemoryError("Critical memory level reached")
+
+        # Не пишем в историю каждый вызов (цикл зовёт это часто) — только точку.
+        return free
+
+    def check_after_execution(self, baseline_free=None):
+        """
+        Проверка памяти ПОСЛЕ выполнения кода.
+
+        Сравнивает текущий свободный объём с базовым уровнем (перед запуском
+        или с baseline_free, если передан). Если память заметно «утекла»,
+        запускает gc.collect() и повторно замеряет.
+
+        Args:
+            baseline_free: Опциональный базовый уровень свободной памяти
+                           (например, замер до выполнения). Если None,
+                           используется self._baseline_free.
+
+        Returns:
+            Словарь со статистикой: free, allocated, delta, gc_triggered.
+        """
+        before = baseline_free if baseline_free is not None else self._baseline_free
+        gc.collect()
+        free = _get_free_memory()
+        allocated = _get_allocated_memory()
+
+        delta = None
+        gc_triggered = False
+        if free is not None and before is not None:
+            delta = free - before
+            # Если свободная память заметно просела (> 20% от лимита) —
+            # сборка мусора уже выполнена выше; помечаем это.
+            if delta < -(self.hard_limit * 0.2):
+                gc_triggered = True
+                # Повторный замер после gc.collect()
+                free = _get_free_memory()
+                allocated = _get_allocated_memory()
+                delta = free - before if (free is not None) else None
+
+        self._record_check('after', {'delta': delta, 'gc_triggered': gc_triggered})
+
+        return {
+            'free': free if free is not None else 0,
+            'allocated': allocated if allocated is not None else 0,
+            'delta': delta,
+            'gc_triggered': gc_triggered,
+        }
+
     def get_memory_stats(self):
         """
-        Детальная статистика использования памяти
-        
+        Детальная статистика использования памяти.
+
         Returns:
-            Словарь со статистикой памяти
+            Словарь со статистикой памяти.
         """
         gc.collect()
-        free = _get_free_memory() or 0
-        allocated = _get_allocated_memory() or 0
+        free = _get_free_memory()
+        allocated = _get_allocated_memory()
         return {
-            'free': free,
-            'allocated': allocated,
-            'total': free + allocated,
+            'free': free if free is not None else 0,
+            'allocated': allocated if allocated is not None else 0,
+            'total': (free or 0) + (allocated or 0),
             'baseline_free': self._baseline_free,
             'check_count': len(self._memory_checks)
         }
-    
+
     def get_memory_history(self):
         """
-        История проверок памяти
-        
+        История проверок памяти.
+
         Returns:
-            Список проверок памяти
+            Список проверок памяти.
         """
         return self._memory_checks
 
@@ -274,14 +378,23 @@ class MemoryOptimizer:
     def check_during_execution(self):
         """
         Проверка памяти во время выполнения кода
-        
+
         Returns:
             Текущее количество свободной памяти
-            
+
         Raises:
             MemoryError: Если критический уровень памяти
         """
         return self.memory_monitor.check_during_execution()
+
+    def check_after_execution(self, baseline_free=None):
+        """
+        Проверка памяти ПОСЛЕ выполнения кода.
+
+        Делегирует в RealTimeMemoryMonitor. Возвращает словарь со статистикой
+        (free, allocated, delta, gc_triggered) и не выбрасывает исключений.
+        """
+        return self.memory_monitor.check_after_execution(baseline_free)
         
     def check_memory_pressure(self):
         """
@@ -368,63 +481,3 @@ class MemoryOptimizer:
                 del self.buffer_sizes[buffer_name]
             return True
         return False
-
-
-# Unit tests for memory_optimizer
-def test_memory_optimizer():
-    """
-    Unit-тесты для MemoryOptimizer
-    """
-    print("Testing MemoryOptimizer...")
-    
-    optimizer = MemoryOptimizer(max_memory_kb=25)
-    
-    # Тест 1: Предварительное выделение буферов
-    buffers_config = {
-        'input_buffer': 1024,
-        'output_buffer': 1024,
-        'temp_buffer': 512
-    }
-    
-    buffers = optimizer.preallocate_buffers(buffers_config)
-    assert len(buffers) == 3, "Should allocate 3 buffers"
-    print("✓ Test 1: Buffer allocation passed")
-    
-    # Тест 2: Проверка памяти перед выполнением
-    try:
-        optimizer.check_before_execution(estimated_bytes=1000)
-        print("✓ Test 2: Pre-execution memory check passed")
-    except MemoryError:
-        print("✓ Test 2: Pre-execution memory check (insufficient memory)")
-    
-    # Тест 3: Проверка памяти во время выполнения
-    try:
-        free = optimizer.check_during_execution()
-        assert isinstance(free, int), "Should return free memory as int"
-        print("✓ Test 3: During-execution memory check passed")
-    except MemoryError:
-        print("✓ Test 3: During-execution memory check (critical level)")
-    
-    # Тест 4: Детальная статистика памяти
-    stats = optimizer.get_memory_stats()
-    assert 'free' in stats, "Stats should include free memory"
-    assert 'allocated' in stats, "Stats should include allocated memory"
-    assert 'total' in stats, "Stats should include total memory"
-    print("✓ Test 4: Detailed memory stats passed")
-    
-    # Тест 5: Проверка давления на память
-    pressure = optimizer.check_memory_pressure()
-    assert 'pressure_ratio' in pressure, "Pressure should include ratio"
-    assert 'is_critical' in pressure, "Pressure should include critical flag"
-    print("✓ Test 5: Memory pressure check passed")
-    
-    # Тест 6: Очистка памяти
-    cleanup_result = optimizer.cleanup_cache()
-    assert 'cleaned_caches' in cleanup_result, "Cleanup should report cleaned caches"
-    print("✓ Test 6: Memory cleanup passed")
-    
-    print("\n✅ All memory optimizer tests passed!\n")
-
-
-if __name__ == "__main__":
-    test_memory_optimizer()
