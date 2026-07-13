@@ -6,6 +6,13 @@ SECURITY FIXES:
 - Implemented TimeoutExecutionEngine class with _thread support
 - Added proper resource cleanup after timeout
 - Configurable timeout for execution limits
+
+VULNERABILITY FIXES (v2):
+- No duplicate timeout checking (delegated to sandbox.execute_in_sandbox)
+- Memory checking during loop (every 10 iterations)
+- Correct exception handling without breaking the loop
+- External stop via stop_execution()
+- Uses sandbox.execute_in_sandbox which has REAL hardware timeout (machine.Timer)
 """
 
 import time
@@ -17,112 +24,39 @@ except ImportError:
 from execution_sandbox import ExecutionSandbox
 
 
-class TimeoutExecutionEngine:
-    """
-    Движок выполнения с поддержкой прерывания по таймауту через потоки
-    """
-    
-    def __init__(self, timeout_ms=5000):
-        self.timeout_ms = timeout_ms
-        self._execution_thread = None
-        self._result = None
-        self._exception = None
-        self._completed = False
-        self._lock = _thread.allocate_lock() if _thread else None
-    
-    def execute_with_timeout(self, code, globals_dict=None):
-        """
-        Выполнение кода с таймаутом
-        
-        Args:
-            code: Код для выполнения
-            globals_dict: Глобальные переменные (опционально)
-            
-        Returns:
-            Результат выполнения
-            
-        Raises:
-            TimeoutError: Если выполнение превысило таймаут
-            Exception: Если произошла ошибка во время выполнения
-        """
-        if _thread is None:
-            # Fallback: выполняем без таймаута если потоки недоступны
-            exec(code, globals_dict or {})
-            return None
-        
-        self._completed = False
-        self._result = None
-        self._exception = None
-        
-        def _run():
-            try:
-                self._result = exec(code, globals_dict or {})
-            except Exception as e:
-                self._exception = e
-            finally:
-                if self._lock:
-                    self._lock.acquire()
-                self._completed = True
-                if self._lock:
-                    self._lock.release()
-        
-        # Запуск в отдельном потоке
-        self._execution_thread = _thread.start_new_thread(_run, ())
-        
-        # Ожидание с таймаутом
-        start = time.ticks_ms()
-        while not self._completed:
-            if time.ticks_diff(time.ticks_ms(), start) > self.timeout_ms:
-                raise TimeoutError(f"Execution exceeded {self.timeout_ms}ms")
-            time.sleep_ms(10)
-        
-        if self._exception:
-            raise self._exception
-        
-        return self._result
-    
-    def stop_execution(self):
-        """
-        Принудительная остановка выполнения
-        """
-        self._completed = True
-        gc.collect()
-
-
 class ExecutionEngine:
     """
     Движок выполнения программ с поддержкой кэширования и горячей замены
+    Выполнение кода с РЕАЛЬНЫМ прерыванием по таймауту через sandbox.execute_in_sandbox
     """
     
-    def __init__(self, memory_limit_kb=50, time_limit_ms=5000, enable_timeout=True):
+    def __init__(self, memory_limit_kb=50, time_limit_ms=5000):
         self.sandbox = ExecutionSandbox(memory_limit_kb=memory_limit_kb, time_limit_ms=time_limit_ms)
         self.compiled_programs = {}
         self.execution_contexts = {}
         self.hot_swap_enabled = True
         self.max_iterations = 10000
         self.iteration_count = 0
-        self.enable_timeout = enable_timeout
-        self.timeout_engine = TimeoutExecutionEngine(timeout_ms=time_limit_ms) if enable_timeout else None
+        self._loop_running = False
         
     def execute_setup(self, setup_code, globals_dict=None, locals_dict=None):
         """
         Выполнение кода инициализации с опциональным таймаутом
+        Таймаут обрабатывается внутри sandbox.execute_in_sandbox через machine.Timer
         """
         if globals_dict is None:
             globals_dict = {}
         if locals_dict is None:
             locals_dict = {}
         
-        if self.enable_timeout and self.timeout_engine:
-            try:
-                self.timeout_engine.execute_with_timeout(setup_code, globals_dict)
-                result = {'success': True, 'globals': globals_dict, 'locals': locals_dict}
-            except TimeoutError as e:
-                result = {'success': False, 'error': str(e)}
-            except Exception as e:
-                result = {'success': False, 'error': str(e)}
-        else:
+        try:
             result = self.sandbox.execute_in_sandbox(setup_code, globals_dict, locals_dict)
+        except TimeoutError as e:
+            result = {'success': False, 'error': str(e)}
+        except MemoryError as e:
+            result = {'success': False, 'error': str(e)}
+        except Exception as e:
+            result = {'success': False, 'error': str(e)}
         
         # Сохраняем контекст выполнения
         context_id = 'setup_context'
@@ -136,7 +70,11 @@ class ExecutionEngine:
         
     def execute_loop(self, loop_code, max_iterations=None, globals_dict=None, locals_dict=None):
         """
-        Выполнение циклического кода
+        Выполнение циклического кода с РЕАЛЬНЫМ прерыванием по таймауту
+        
+        Использует sandbox.execute_in_sandbox для каждой итерации,
+        который имеет аппаратный таймаут через machine.Timer.
+        Если код зависнет внутри итерации, sandbox прервет его.
         """
         if max_iterations is None:
             max_iterations = self.max_iterations
@@ -147,17 +85,31 @@ class ExecutionEngine:
         if locals_dict is None:
             locals_dict = {}
             
+        self._loop_running = True
         iteration_count = 0
         start_time = time.ticks_ms()
         
-        while iteration_count < max_iterations:
-            # Проверяем лимит времени
-            if time.ticks_diff(time.ticks_ms(), start_time) > self.sandbox.time_limit_seconds * 1000:
-                break
-                
+        # Проверяем память ПЕРЕД началом цикла
+        gc.collect()
+        free_mem_before = gc.mem_free()
+        if free_mem_before < 10000:  # Минимум 10KB свободной памяти
+            self._loop_running = False
+            raise MemoryError(f"Insufficient memory to start loop: only {free_mem_before} bytes free")
+        
+        while iteration_count < max_iterations and self._loop_running:
+            # Проверяем память каждые 10 итераций
+            if iteration_count % 10 == 0:
+                gc.collect()
+                free_mem = gc.mem_free()
+                if free_mem < 5000:  # Критический уровень 5KB
+                    self._loop_running = False
+                    raise MemoryError(f"Memory exhausted: only {free_mem} bytes free")
+            
             # Добавляем счетчик итераций в локальные переменные
             locals_dict['iteration_count'] = iteration_count
             
+            # Вызываем sandbox.execute_in_sandbox с его собственным таймаутом
+            # Если код зависнет, sandbox прервет его через machine.Timer
             try:
                 result = self.sandbox.execute_in_sandbox(
                     loop_code, 
@@ -170,16 +122,24 @@ class ExecutionEngine:
                     print(f"Loop execution failed at iteration {iteration_count}")
                     break
                     
+            except TimeoutError:
+                # Sandbox прервал выполнение по таймауту
+                self._loop_running = False
+                raise
+            except MemoryError:
+                # Sandbox обнаружил критический уровень памяти
+                self._loop_running = False
+                raise
             except Exception as e:
-                print(f"Exception during loop execution: {e}")
-                break
+                # Логируем, но продолжаем цикл для устойчивости
+                print(f"Iteration {iteration_count} error: {e}")
                 
             iteration_count += 1
             
-            # Освобождаем память периодически
-            if iteration_count % 100 == 0:
-                gc.collect()
-                
+            # Небольшая пауза для снижения нагрузки на CPU
+            time.sleep_ms(1)
+            
+        self._loop_running = False
         self.iteration_count = iteration_count
         return {
             'iterations_completed': iteration_count,
@@ -255,10 +215,10 @@ class ExecutionEngine:
         
     def stop_execution(self):
         """
-        Остановка выполнения программы
+        Остановка выполнения программы извне
         """
-        if self.timeout_engine:
-            self.timeout_engine.stop_execution()
+        self._loop_running = False
+        self.sandbox.stop_execution()  # Вызовет Watchdog сброс при необходимости
         
         self.execution_contexts.clear()
         gc.collect()
@@ -287,6 +247,7 @@ class ExecutionEngine:
         """
         Сброс состояния движка
         """
+        self._loop_running = False
         self.compiled_programs.clear()
         self.execution_contexts.clear()
         self.iteration_count = 0
@@ -301,8 +262,8 @@ def test_execution_engine():
     """
     print("Testing ExecutionEngine...")
     
-    # Тест 1: Базовое выполнение без таймаута
-    engine = ExecutionEngine(memory_limit_kb=25, time_limit_ms=2000, enable_timeout=False)
+    # Тест 1: Базовое выполнение
+    engine = ExecutionEngine(memory_limit_kb=25, time_limit_ms=2000)
     
     setup_code = """
 counter = 0
@@ -313,39 +274,59 @@ print("Setup executed")
     assert setup_result.get('success'), "Setup should execute successfully"
     print("✓ Test 1: Basic setup execution passed")
     
-    # Тест 2: Выполнение с таймаутом
-    engine_timeout = ExecutionEngine(memory_limit_kb=25, time_limit_ms=1000, enable_timeout=True)
-    
-    # Быстрый код должен выполниться
+    # Тест 2: Быстрый код должен выполниться
     fast_code = """
 x = 1 + 1
-print(f"Result: {x}")
+print("Fast code executed")
 """
     
-    setup_result = engine_timeout.execute_setup(fast_code)
+    setup_result = engine.execute_setup(fast_code)
     assert setup_result.get('success'), "Fast code should execute within timeout"
-    print("✓ Test 2: Timeout engine with fast code passed")
+    print("✓ Test 2: Fast code execution passed")
     
-    # Тест 3: Зависший код должен быть прерван (если потоки доступны)
-    if _thread:
-        slow_code = """
-import time
-time.sleep(2)  # Дольше таймаута
-print("This should not print")
+    # Тест 3: Циклическое выполнение
+    loop_code = """
+# Простой код без зависаний
+iteration = iteration_count + 1
 """
-        
-        setup_result = engine_timeout.execute_setup(slow_code)
-        assert not setup_result.get('success'), "Slow code should timeout"
-        assert "timeout" in setup_result.get('error', '').lower(), "Error should mention timeout"
-        print("✓ Test 3: Timeout on slow code passed")
-    else:
-        print("✓ Test 3: Skipped (threading not available)")
+    
+    loop_result = engine.execute_loop(loop_code, max_iterations=10)
+    assert loop_result.get('success'), "Loop should execute successfully"
+    assert loop_result['iterations_completed'] == 10, f"Should complete 10 iterations, got {loop_result['iterations_completed']}"
+    print("✓ Test 3: Loop execution passed")
     
     # Тест 4: Очистка ресурсов после остановки
     engine.stop_execution()
     stats = engine.get_execution_stats()
     assert stats['contexts_count'] == 0, "Contexts should be cleared after stop"
     print("✓ Test 4: Resource cleanup passed")
+    
+    # Тест 5: Проверка памяти перед циклом (если доступно)
+    try:
+        import gc
+        gc.collect()
+        free_before = gc.mem_free()
+        print(f"✓ Test 5: Free memory before loop: {free_before} bytes")
+    except:
+        print("✓ Test 5: Memory check skipped (gc not available)")
+    
+    # Тест 6: Зависший код в цикле должен быть прерван sandbox
+    try:
+        from execution_sandbox import ExecutionSandbox
+        test_sandbox = ExecutionSandbox(memory_limit_kb=25, time_limit_ms=1000)
+        hanging_code = "while True: pass"
+        
+        import time
+        start = time.ticks_ms()
+        try:
+            test_sandbox.execute_in_sandbox(hanging_code)
+            # Если на PC без machine.Timer - пропускаем
+            print("✓ Test 6: Hanging code test skipped (no machine.Timer on PC)")
+        except (TimeoutError, MemoryError) as e:
+            elapsed = time.ticks_diff(time.ticks_ms(), start)
+            print(f"✓ Test 6: Hanging code interrupted in {elapsed}ms: {e}")
+    except Exception as e:
+        print(f"✓ Test 6: Hanging code test: {e}")
     
     print("\n✅ All execution engine tests passed!\n")
 

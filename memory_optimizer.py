@@ -13,6 +13,31 @@ import sys
 import time
 
 
+# Проверка доступности MicroPython-специфичных функций gc
+_HAS_MEM_FREE = hasattr(gc, 'mem_free')
+_HAS_MEM_ALLOC = hasattr(gc, 'mem_alloc')
+
+
+def _get_free_memory():
+    """
+    Безопасное получение свободной памяти
+    Возвращает int или None если функция недоступна
+    """
+    if _HAS_MEM_FREE:
+        return gc.mem_free()
+    return None
+
+
+def _get_allocated_memory():
+    """
+    Безопасное получение выделенной памяти
+    Возвращает int или None если функция недоступна
+    """
+    if _HAS_MEM_ALLOC:
+        return gc.mem_alloc()
+    return None
+
+
 class RealTimeMemoryMonitor:
     """
     Мониторинг памяти в реальном времени с проверкой до и во время выполнения
@@ -21,7 +46,7 @@ class RealTimeMemoryMonitor:
     def __init__(self, hard_limit_bytes, warning_threshold=0.8):
         self.hard_limit = hard_limit_bytes
         self.warning_threshold = warning_threshold
-        self._baseline_free = gc.mem_free()
+        self._baseline_free = _get_free_memory() or hard_limit_bytes * 10  # fallback
         self._memory_checks = []
     
     def check_before_execution(self, estimated_bytes):
@@ -35,46 +60,50 @@ class RealTimeMemoryMonitor:
             MemoryError: Если недостаточно памяти
         """
         gc.collect()  # Сбор мусора перед проверкой
-        free = gc.mem_free()
+        free = _get_free_memory()
         
-        if free < estimated_bytes:
-            raise MemoryError(
-                f"Insufficient memory: need {estimated_bytes}, "
-                f"have {free} bytes free"
-            )
-        
-        if free < self.hard_limit * (1 - self.warning_threshold):
-            gc.collect()  # Попытка освободить память
+        if free is not None:
+            if free < estimated_bytes:
+                raise MemoryError(
+                    f"Insufficient memory: need {estimated_bytes}, "
+                    f"have {free} bytes free"
+                )
             
-        self._memory_checks.append({
-            'type': 'before',
-            'free': free,
-            'estimated': estimated_bytes,
-            'timestamp': time.ticks_ms()
-        })
+            if free < self.hard_limit * (1 - self.warning_threshold):
+                gc.collect()  # Попытка освободить память
+                
+            self._memory_checks.append({
+                'type': 'before',
+                'free': free,
+                'estimated': estimated_bytes,
+                'timestamp': time.ticks_ms()
+            })
     
     def check_during_execution(self):
         """
         Проверка памяти ВО ВРЕМЯ выполнения
         
         Returns:
-            Текущее количество свободной памяти
+            Текущее количество свободной памяти (int, 0 если функция недоступна)
             
         Raises:
             MemoryError: Если критический уровень памяти
         """
-        free = gc.mem_free()
+        free = _get_free_memory()
         
-        if free < self.hard_limit * 0.1:  # Критический уровень
-            raise MemoryError("Critical memory level reached")
+        if free is not None:
+            if free < self.hard_limit * 0.1:  # Критический уровень
+                raise MemoryError("Critical memory level reached")
+            
+            self._memory_checks.append({
+                'type': 'during',
+                'free': free,
+                'timestamp': time.ticks_ms()
+            })
+            return free
         
-        self._memory_checks.append({
-            'type': 'during',
-            'free': free,
-            'timestamp': time.ticks_ms()
-        })
-        
-        return free
+        # Если gc.mem_free() недоступен (стандартный Python), возвращаем 0
+        return 0
     
     def get_memory_stats(self):
         """
@@ -84,10 +113,12 @@ class RealTimeMemoryMonitor:
             Словарь со статистикой памяти
         """
         gc.collect()
+        free = _get_free_memory() or 0
+        allocated = _get_allocated_memory() or 0
         return {
-            'free': gc.mem_free(),
-            'allocated': gc.mem_alloc(),
-            'total': gc.mem_free() + gc.mem_alloc(),
+            'free': free,
+            'allocated': allocated,
+            'total': free + allocated,
             'baseline_free': self._baseline_free,
             'check_count': len(self._memory_checks)
         }
