@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# VSCode (личные настройки)
+.vscode/
+
+# Тестовые артефакты
+out.txt
+*.tmp
+
+# Файлы, которые не нужны в репо
+test_output.txt
+test_results.txt

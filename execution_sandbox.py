@@ -184,10 +184,16 @@ class ExecutionSandbox:
         self._keepalive_period_ms = 250
 
         # Разрешенные модули для ESP32
+        # TUR55 раздел 6: запрещены os, socket, urandom и сетевые модули.
+        # Оставляем только модули, необходимые для управления устройством.
         if allowed_modules is None:
             allowed_modules = [
-                'machine', 'time', 'math', 'struct', 'sys', 'gc', 'json',
-                '_thread', 'select', 'socket', 'ssl', 'network', 'uos'
+                'machine',  # GPIO, Timer, WDT
+                'time',     # sleep, ticks_ms
+                'math',     # математика
+                'struct',   # бинарные данные
+                'json',     # парсинг JSON
+                'gc',       # управление памятью
             ]
 
         self.safe_importer = SafeImporter(allowed_modules)
