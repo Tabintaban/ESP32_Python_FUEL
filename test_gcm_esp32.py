@@ -1,12 +1,9 @@
 """
 NIST-тесты для AES-256-GCM на ESP32.
-Запускать через REPL MicroPython.
-
-Важно: этот файл — упрощённая версия test_gcm.py,
-без импорта cryptography, только gcm_esp32.
+Модуль gcm — C-модуль на mbedTLS.
 """
 
-from gcm_esp32 import GCM
+import gcm
 
 
 # NIST SP 800-38D, Test Case 13 (AES-256)
@@ -59,13 +56,12 @@ TC15 = {
 def run_test(tc):
     print("=== %s ===" % tc['name'])
     try:
-        gcm = GCM(tc['key'])
-        iv, ct, tag = gcm.encrypt(tc['pt'], tc['aad'], iv=tc['iv'])
+        ct, tag = gcm.encrypt(tc['key'], tc['iv'], tc['pt'], tc['aad'])
         ok_ct  = (ct  == tc['ct'])
         ok_tag = (tag == tc['tag'])
         print("  CT:  %s" % ('OK' if ok_ct  else 'FAIL'))
         print("  Tag: %s" % ('OK' if ok_tag else 'FAIL'))
-        pt2 = gcm.decrypt(iv, ct, tag, tc['aad'])
+        pt2 = gcm.decrypt(tc['key'], tc['iv'], ct, tag, tc['aad'])
         ok_dec = (pt2 == tc['pt'])
         print("  Decrypt: %s" % ('OK' if ok_dec else 'FAIL'))
         return ok_ct and ok_tag and ok_dec
