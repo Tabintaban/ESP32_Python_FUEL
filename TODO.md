@@ -17,168 +17,155 @@
 - [x] Разработаны 14 Python-модулей
 - [x] Написаны 5 тестовых файлов
 - [x] Документация (README EN/RU, PROJECT_SUMMARY EN/RU, CHANGELOG)
-- [x] Архитектурный план `ESP32_MicroPython_Architecture_Plan.md`
+- [x] Архитектурный план
 - [x] Лицензия MIT
 
-### Криптография (v1.0)
-- [x] `crypto_manager.py` — «fake AES-GCM» (заменено)
-- [x] `lightweight_security.py` — «broken Ed25519» (заменено)
-- [x] `_derive_private_from_public()` — небезопасный метод (удалён)
-
 ### Криптография (v2.0)
-- [x] `crypto_manager.py` — AES-CTR + HMAC-SHA256 (Encrypt-then-MAC)
-- [x] `crypto_manager.py` — constant-time comparison
-- [x] `crypto_manager.py` — fail-secure при отсутствии `ucryptolib`
-- [x] `lightweight_security.py` — HMAC-SHA256 вместо Ed25519
-- [x] `lightweight_security.py` — nonce/timestamp против replay
-- [x] `lightweight_security.py` — constant-time comparison
+- [x] `crypto_manager.py` — AES-CTR + HMAC-SHA256
+- [x] `lightweight_security.py` — HMAC-SHA256
+- [x] Constant-time comparison
 
 ### Песочница (v2/v3)
 - [x] `execution_sandbox.py` — SafeImporter с whitelist
-- [x] `execution_sandbox.py` — таймаут через WDT + кормящий таймер
-- [x] `execution_sandbox.py` — блокировка `__import__`, `eval`, `exec`
-- [x] `execution_sandbox.py` — интеграция `RealTimeMemoryMonitor`
-- [x] `memory_optimizer.py` — pre/during/after execution checks
-
-### Компиляция и загрузка
-- [x] `line_compiler.py` — нормализация отступов (GCD)
-- [x] `line_compiler.py` — запрет смешивания табов и пробелов
-- [x] `fast_json_loader.py` — сохранение переносов строк
-- [x] `fast_json_loader.py` — валидация синтаксиса
-- [x] `program_loader.py` — загрузка и валидация JSON
-
-### Прочее
-- [x] `main.py` — Logger с уровнями
-- [x] `main.py` — конкретные типы исключений
-- [x] `test_results.txt` — тесты (но криптография пропущена)
-- [x] `performance_tests.py` — бенчмарки
+- [x] `execution_sandbox.py` — таймаут через WDT
+- [x] `memory_optimizer.py` — pre/during/after checks
 
 ---
 
 ## Часть 2. Что сделано в нашей работе
 
-### Шаг 2.5 — whitelist модулей в песочнице
-- [x] Убраны из whitelist: `sys`, `_thread`, `select`, `socket`, `ssl`, `network`, `uos`
+### Шаг 2.5 — whitelist модулей
+- [x] Убраны: `sys`, `_thread`, `select`, `socket`, `ssl`, `network`, `uos`
 - [x] Оставлены: `machine`, `time`, `math`, `struct`, `json`, `gc`
-- [x] Синтаксис проверен (`ast.parse`) — OK
-- [x] Соответствие TUR55 раздел 6 — достигнуто
+- [x] Соответствие TUR55 раздел 6 — **достигнуто**
 
-### Шаг 3.1 — AES-256-GCM на чистом Python
-- [x] 3.1.1 — создан `gcm.py` со скелетом
-- [x] 3.1.1 — создан `test_gcm.py` с NIST-векторами (TC13, TC14, TC15)
-- [x] 3.1.2.1 — реализованы `_gctr`, `_inc32`, IV, тег
-- [x] 3.1.2.2 — реализован `_ghash` (побитовый)
-- [x] 3.1.2.2 — реализован `_gf_mul` (GF(2^128))
-- [x] NIST-тесты на CPython: **3/3 прошло**
-- [x] Проверка `_gf_mul` (NIST TC2): OK
-- [x] Бенчмарк на CPython: 10 KB = 57 мс encrypt + 57 мс decrypt
+### Шаг 3.1 — Кастомная прошивка MicroPython
+- [x] Установлен WSL Ubuntu 22.04
+- [x] Установлен ESP-IDF **v5.2.2** (v5.1.2 и v5.3.2 не подошли)
+- [x] Клонирован MicroPython **v1.24.1**
+- [x] Собран `mpy-cross`
+- [x] **Решение boot loop:** заливать **три файла** по трём адресам:
+  - `bootloader.bin` → `0x1000`
+  - `partition-table.bin` → `0x8000`
+  - `micropython.bin` → `0x10000`
 
-### Попытка табличного GHASH (откат)
-- [x] Реализован `_precompute_table` + `_ghash` табличный (4-бит)
-- [x] **Откат** — табличный GHASH дал неверные результаты
-- [x] Возврат к побитовому `_ghash`
+### Шаг 3.2 — GCM C-модуль
+- [x] Создан `~/cmodules/gcm/modgcm.c` (mbedTLS)
+- [x] Создан `~/cmodules/gcm/micropython.cmake`
+- [x] **NIST SP 800-38D на ESP32: 3/3 прошло**
+- [x] `gcm.encrypt(key, iv, pt, aad)` → `(ct, tag)`
+- [x] `gcm.decrypt(key, iv, ct, tag, aad)` → `pt`
 
-### Шаг 3.1.5 — перенос на ESP32
-- [x] Установлен `esptool` 5.5.0
-- [x] Скачана прошивка `ESP32_GENERIC-20260824-v1.29.0.bin`
-- [x] Стереть flash ESP32
-- [x] Залита MicroPython 1.29.0
-- [x] Установлен MicroPico (VSCode)
-- [x] Подключение к ESP32 (COM3) работает
-- [x] Проверено: `ucryptolib` доступен
-- [x] Создан `gcm_esp32.py` (только `ucryptolib`, без `cryptography`)
-- [x] Залит `gcm_esp32.py` на ESP32
-- [x] Создан `test_gcm_esp32.py`
-- [x] Залит `test_gcm_esp32.py` на ESP32
+### Шаг 3.3 — ucryptography (Ed25519, BLAKE2s, RSA-OAEP, ECDSA)
+- [x] Клонирован `ucryptography`
+- [x] Обёртка `mp_obj_int_to_bytes` для MicroPython v1.24.1
+- [x] Заглушки 3DES (`des3_stubs.c`)
+- [x] **RSA-OAEP работает** (`b'secret'` round-trip)
+- [x] **BLAKE2s работает** (`f308fc02...`)
+- [x] **ECDSA SECP256R1 работает**
+- [x] **Ed25519 работает, НО с багом** на сообщениях > 96 байт
+  - Решение: **заменён на secp256k1**
 
-### Шаг 3.1.5 — отладка на ESP32
-- [x] NIST-тесты на ESP32: **1/3** (TC13 OK, TC14/TC15 FAIL)
-- [x] Исправлен `_gctr` (паддинг до 16 байт) — `ValueError: blksize % 16` устранён
-- [x] Проверен `_gf_mul` на ESP32 — **работает** (5e2ec746...)
-- [x] Проверен `_ghash` на ESP32 — **работает** (нули для пустого блока)
-- [x] Выяснено: `ucryptolib` на ESP32 **не поддерживает**:
-  - CTR (mode=6) → `ValueError: mode`
-  - GCM (mode=0) → `ValueError: mode`
-- [x] Подтверждено: **GCM недоступен** на стандартной прошивке
+### Шаг 3.4 — secp256k1 (Bitcoin Core)
+- [x] Клонирован `secp256k1-embedded-ecdh`
+- [x] Модуль `usecp256k1` загружается на ESP32
+- [x] **ECDSA sign / verify работает**
+- [x] **Точное соответствие TUR55 раздел 4**
+
+### Шаг 3.5 — Формат пакета TUR55
+- [x] Создан `tur55_packet.py` (JWE-inspired)
+- [x] Структура: HEADER + PUBKEY + SESSION_KEY + SCRIPT + SIGNATURE
+- [x] Подпись **ECDSA secp256k1** (вместо Ed25519)
+- [x] `build_packet()` — для экзекутора
+- [x] `parse_packet()` — для ESP32
+- [x] Создан `gcm_adapter.py` — единый интерфейс GCM
+- [x] Тест на CPython: **round-trip прошёл**
+- [x] Tamper detection: **работает**
+- [x] Залито на ESP32: `tur55_packet.py`, `gcm_adapter.py`
+- [x] `import tur55_packet` на ESP32: **OK**
 
 ---
 
 ## Часть 3. Что нужно сделать
 
-### Криптография — заблокировано
-- [ ] ❌ Получить GCM на ESP32 (заблокировано отсутствием режима)
-- [ ] ⏳ Поиск/сборка прошивки MicroPython с GCM
-  - [ ] Установить ESP-IDF
-  - [ ] Клонировать MicroPython
-  - [ ] Включить `MICROPY_PY_CRYPTOOLIB_GCM`
-  - [ ] Собрать прошивку
-  - [ ] Залить и проверить
-- [ ] Если GCM недоступен — **вернуться к CTR+HMAC** и честно заявить отклонение от TUR55
+### Формат пакета TUR55 — тестирование
+- [ ] Полный round-trip: сгенерировать пакет на CPython → залить на ESP32 → расшифровать
+- [ ] Проверить `parse_packet` на ESP32 с реальным пакетом
+- [ ] JSON-конверт по разделу 3.2: `tur55_version`, `command_id`, `device_id`, `source`, `execution`, `custom_data`
 
-### Формат пакета TUR55 (раздел 3.4)
-- [ ] Реализовать структуру пакета:
-  - [ ] `[HEADER: TUR55v1]`
-  - [ ] `[ENCRYPTED_SESSION_KEY]` (ECIES / RSA-OAEP)
-  - [ ] `[ENCRYPTED_SCRIPT]` (AES-256-GCM)
-  - [ ] `[SIGNATURE]` (Ed25519 / ECDSA secp256k1)
-- [ ] JSON-конверт по разделу 3.2:
-  - [ ] `tur55_version`
-  - [ ] `command_id`
-  - [ ] `device_id`
-  - [ ] `source`
-  - [ ] `execution`
-  - [ ] `custom_data`
-
-### Сессионный ключ (ECIES / RSA-OAEP)
-- [ ] Выбрать: ECIES или RSA-OAEP
-- [ ] Реализовать на ESP32
-- [ ] Асимметричное шифрование сессионного ключа
-
-### Подпись (Ed25519 / ECDSA secp256k1)
-- [ ] Выбрать: Ed25519 или ECDSA
-- [ ] Реализовать на ESP32
-- [ ] `lightweight_security.py` — заменить HMAC на асимметричную подпись
-
-### Хеширование (SHA3-256 / Blake2s)
-- [ ] Заменить SHA-256 на SHA3-256 или Blake2s
-
-### Ключи (раздел 4)
-- [ ] Реализовать хранение ключей в eFuse / Secure Element
-- [ ] Убрать ключи из кода
-
-### `program_loader.py`
+### Интеграция
+- [ ] `program_loader.py` — использовать `tur55_packet.parse_packet()`
 - [ ] Исправить вызов `verify_ed25519_signature` (метод не существует)
 - [ ] Добавить проверку `expires` (раздел 5 TUR55)
-- [ ] Добавить проверку `command_id` (replay)
+- [ ] Добавить проверку `command_id` (replay protection)
+- [ ] `execution_engine.py` — проверка `expires` в цикле
+- [ ] Заменить SHA-256 на **BLAKE2s** в `program_loader.py`
 
-### `execution_engine.py`
-- [ ] Добавить проверку `expires` в цикл
+### Ключи (раздел 4)
+- [ ] Хранение ключей в **eFuse** (ESP32)
+- [ ] Убрать ключи из кода
+- [ ] Загрузка ключей при старте
+
+### Сетевой стек (по умолчанию)
+- [ ] MQTT-клиент (`umqtt.simple`)
+- [ ] HTTP-сервер (опционально)
+- [ ] Приём пакетов по сети
+- [ ] Единый интерфейс приёма (сеть + файл)
+
+### Физическая доставка
+- [ ] Чтение `programs/program.enc` из файловой системы
+- [ ] Единый интерфейс с сетевым приёмом
 
 ### Песочница
-- [ ] Убрать `object_factory.py` или обезопасить (там `exec()` без песочницы)
+- [ ] Убрать `object_factory.py` или обезопасить (`exec()` без песочницы)
+- [ ] Доступ к GPIO только по разрешённым пинам
 
 ### Тесты
 - [ ] Запустить **все** тесты на реальном ESP32
-- [ ] Добавить тесты для `program_loader`
-- [ ] Добавить тесты для формата пакета TUR55
+- [ ] Тесты для `program_loader`
+- [ ] Тесты для формата пакета TUR55
 
 ### Документация
 - [ ] README — обновить статус TUR55
 - [ ] CHANGELOG — записать всё сделанное
-- [ ] Отдельный документ `TUR55_COMPLIANCE.md` — таблица соответствия
+- [ ] `TUR55_COMPLIANCE.md` — таблица соответствия
+- [ ] `BUILD_GCM_FIRMWARE.md` — обновить (добавить ucryptography + secp256k1)
+- [ ] `FIRMWARE_WITH_UCRYPTOGRAPHY.md` — обновить
 
 ### Продакшн
 - [ ] Аудит безопасности
 - [ ] Стресс-тесты на ESP32
-- [ ] Документация для пользователей
 - [ ] Обработка ошибок (потеря питания, обрыв связи)
 
 ---
 
 ## Текущий статус
 
-**Готово:** ~60% работы  
-**Заблокировано:** GCM на ESP32 (нужна кастомная прошивка)  
-**Осталось:** формат пакета, подпись, ECIES, eFuse, тесты, документация
+**Готово:** **~50%** TUR55/Bronze
 
-**Ключевая проблема:** стандартная прошивка MicroPython для ESP32 **не поддерживает GCM**. TUR55 требует GCM. Без кастомной прошивки — **TUR55/Bronze недостижим**.
+| Раздел | Статус |
+|---|---|
+| **Раздел 3.4** — формат пакета | ✅ Написан |
+| **Раздел 4** — AES-256-GCM | ✅ NIST 3/3 |
+| **Раздел 4** — ECDSA secp256k1 | ✅ Работает |
+| **Раздел 4** — RSA-OAEP | ✅ Работает |
+| **Раздел 4** — BLAKE2s | ✅ Работает |
+| **Раздел 4** — eFuse | ❌ |
+| **Раздел 5** — expires / command_id | ❌ |
+| **Раздел 6** — whitelist / таймаут / память | ✅ |
+
+**Что сделано:**
+- ✅ Кастомная прошивка MicroPython v1.24.1 + ESP-IDF v5.2.2
+- ✅ GCM C-модуль
+- ✅ ucryptography (RSA-OAEP, BLAKE2s)
+- ✅ secp256k1 (Bitcoin Core)
+- ✅ Формат пакета TUR55
+
+**Что осталось:**
+- Полный round-trip тест
+- Интеграция в `program_loader.py`
+- Проверка `expires` и `command_id`
+- eFuse
+- Сетевой стек (MQTT)
+- Физическая доставка
+- Документация
