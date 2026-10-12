@@ -55,12 +55,12 @@ class ProgramLoader:
 
     НЕ отвечает за:
       - раскладку execution на setup/loop_logic (это execution_engine)
-      - проверку expires/command_id (это Заход 2)
     """
 
     KEY_PATH = 'esp32_private_key.json'
     PUBKEY_PATH = 'executor_pubkey.bin'
     CACHE_LIMIT = 10
+    USED_IDS_LIMIT = 100
 
     def __init__(self):
         self.esp32_private_key = self._load_private_key()
@@ -70,7 +70,24 @@ class ProgramLoader:
         self.validation_cache = {}
 
         # Заход 2: replay protection (в RAM, позже — NVS)
-        self.used_command_ids = set()
+        self.used_command_ids = []
+        self.used_command_ids_set = set()
+
+        # Заход 2: синхронизация времени (опционально)
+        self.current_time = 0
+        self.time_synced = False
+
+    def set_time(self, current_time):
+        """
+        Устанавливает текущее время (Unix timestamp).
+
+        Вызывать извне: NTP, MQTT, ручной ввод.
+        После вызова validate_expires начнёт проверять expires.
+        """
+        if not isinstance(current_time, int):
+            raise TypeError("current_time must be int (Unix timestamp)")
+        self.current_time = current_time
+        self.time_synced = True
 
     # ------------------------------------------------------------------
     # Загрузка ключей
@@ -161,7 +178,15 @@ class ProgramLoader:
         if not self.validate_runtime_constraints(program_data):
             raise ValueError("Runtime constraints invalid")
 
-        # 5. Кэш по command_id
+        # 5. Срок действия (опционально, если время синхронизировано)
+        if not self.validate_expires(program_data):
+            raise ValueError("Command expired")
+
+        # 6. Replay protection (command_id)
+        if not self.validate_command_id(program_data):
+            raise ValueError("Command replay detected")
+
+        # 7. Кэш по command_id
         program_id = program_data.get('command_id')
         self.cache_program(program_id, program_data)
 
@@ -289,6 +314,68 @@ class ProgramLoader:
             return False
         if memory_limit <= 0 or memory_limit > 100:
             return False
+
+        return True
+
+    # ------------------------------------------------------------------
+    # Срок действия (TUR55 раздел 5)
+    # ------------------------------------------------------------------
+
+    def validate_expires(self, program_data):
+        """
+        Проверяет срок действия команды.
+
+        Логика:
+          - если expires нет -> пропускаем (опциональное поле)
+          - если время не синхронизировано -> пропускаем
+          - если время синхронизировано -> expires >= current_time
+
+        Returns:
+            bool
+        """
+        execution = program_data.get('execution', {})
+        expires = execution.get('expires')
+
+        if expires is None:
+            return True
+
+        if not isinstance(expires, int):
+            return False
+
+        if not self.time_synced:
+            return True
+
+        return expires >= self.current_time
+
+    # ------------------------------------------------------------------
+    # Replay protection (TUR55 раздел 5)
+    # ------------------------------------------------------------------
+
+    def validate_command_id(self, program_data):
+        """
+        Проверяет, что command_id не использовался ранее.
+
+        Если command_id новый -> добавляет в историю и возвращает True.
+        Если уже был -> возвращает False.
+
+        История ограничена USED_IDS_LIMIT (FIFO).
+        """
+        command_id = program_data.get('command_id')
+
+        if not command_id:
+            return False
+
+        if command_id in self.used_command_ids_set:
+            return False
+
+        # Добавляем
+        self.used_command_ids.append(command_id)
+        self.used_command_ids_set.add(command_id)
+
+        # FIFO-вытеснение
+        if len(self.used_command_ids) > self.USED_IDS_LIMIT:
+            oldest = self.used_command_ids.pop(0)
+            self.used_command_ids_set.discard(oldest)
 
         return True
 
