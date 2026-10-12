@@ -84,39 +84,51 @@
 - [x] Залито на ESP32: `tur55_packet.py`, `gcm_adapter.py`
 - [x] `import tur55_packet` на ESP32: **OK**
 
+### Шаг 3.6 — Round-trip тест (CPython → ESP32)
+- [x] Создан `build_packet_cpython.py` (CPython-версия build_packet)
+- [x] Использован `embit` вместо `coincurve` (совместим с `usecp256k1`)
+- [x] Создан `esp32_private_key.json` (RSA компоненты: n, e, d, p, q, dmp1, dmq1, iqmp)
+- [x] Создан `executor_pubkey.bin` (33 байта)
+- [x] Создан `decrypt_packet_esp32.py` (расшифровка на ESP32)
+- [x] **ROUND-TRIP: УСПЕХ** ✅
+
+### Шаг 3.7 — Интеграция `program_loader.py` (Заход 1)
+- [x] `program_loader.py` переписан под `tur55_packet.parse_packet()`
+- [x] Валидация конверта 3.2: `tur55_version`, `command_id`, `device_id`, `source`, `execution`, `custom_data`
+- [x] `load_program(packet_bytes)` — основной вход (transport-independent)
+- [x] `load_program_from_file(filepath)` — обёртка для файла
+- [x] Загрузка ключей в `__init__()` (RSA + executor pubkey)
+- [x] Удалён мёртвый код: `validate_signature`, `verify_integrity`, `CryptoManager`, `LightweightSecurity`
+- [x] `validate_permissions` — из `execution.permissions`
+- [x] `validate_runtime_constraints` — из `execution`
+- [x] Кэш по `command_id`
+- [x] `tur55_packet.py` — добавлен embit для CPython (`_ecdsa_sign`, `_ecdsa_verify`)
+- [x] `build_packet_cpython.py` — обновлён под конверт 3.2
+- [x] `test_program_loader.py` — тест на CPython: **пройден**
+
+### Шаг 3.8 — Replay protection + expires (Заход 2)
+- [x] `validate_expires` — опциональная проверка (только при `time_synced`)
+- [x] `validate_command_id` — replay protection (FIFO, 100 записей)
+- [x] `set_time(current_time)` — API для синхронизации времени
+- [x] `used_command_ids` + `used_command_ids_set`
+- [x] `test_loader_replay.py` — тест на CPython: **пройден**
+- [x] `test_esp32.py` — тест на ESP32: **пройден**
+  - Первый `load_program` → OK
+  - Второй `load_program` → `Command replay detected` ✅
+
 ---
 
 ## Часть 3. Что нужно сделать
 
-### Шаг 3.6 — Round-trip тест (CPython → ESP32)
-- [x] Создан `build_packet_cpython.py` (CPython-версия build_packet)
-- [x] Использован `embit` вместо `coincurve` (совместим с `usecp256k1`)
-- [x] Пакет сгенерирован на CPython: 521 байт
-- [x] Создан `esp32_private_key.json` (RSA компоненты: n, e, d, p, q, dmp1, dmq1, iqmp)
-- [x] Создан `executor_pubkey.bin` (33 байта)
-- [x] Создан `decrypt_packet_esp32.py` (расшифровка на ESP32)
-- [x] **Проверка RSA-OAEP self-test:** работает
-- [x] **Проверка ECDSA (embit vs usecp256k1):** работает
-- [x] **ROUND-TRIP: УСПЕХ** ✅
-  - CPython: JSON → ECDSA sign → RSA-OAEP → AES-GCM → пакет
-  - ESP32: пакет → ECDSA verify → RSA-OAEP decrypt → AES-GCM decrypt → JSON
-  - Результат: `{'tur55_version': '1.0', 'command_id': '0x7e5f8a3c', 'device_id': 'esp32_001', 'script': "print('hello from ESP32')"}`
-
-### Формат пакета TUR55 — тестирование
-- [x] Полный round-trip: сгенерировать пакет на CPython → залить на ESP32 → расшифровать
-- [x] Проверить `parse_packet` на ESP32 с реальным пакетом
-- [ ] JSON-конверт по разделу 3.2: `tur55_version`, `command_id`, `device_id`, `source`, `execution`, `custom_data`
-
-### Интеграция
-- [ ] `program_loader.py` — использовать `tur55_packet.parse_packet()`
-- [ ] Исправить вызов `verify_ed25519_signature` (метод не существует)
-- [ ] Добавить проверку `expires` (раздел 5 TUR55)
-- [ ] Добавить проверку `command_id` (replay protection)
-- [ ] `execution_engine.py` — проверка `expires` в цикле
-- [ ] Заменить SHA-256 на **BLAKE2s** в `program_loader.py`
+### Интеграция (продолжение)
+- [ ] `execution_engine.py` — интеграция с новым `program_loader.py`
+  - Разложить `execution.setup` / `execution.loop_logic` / `execution.functions`
+  - Выполнить через `execution_sandbox.py`
+  - Проверка `expires` в цикле
+- [ ] Заменить SHA-256 на **BLAKE2s** где релевантно (сейчас целостность даёт GCM tag)
 
 ### Ключи (раздел 4)
-- [ ] Хранение ключей в **eFuse** (ESP32)
+- [ ] Хранение ключей в **eFuse** (ESP32) — требование TUR55 тезис 11
 - [ ] Убрать ключи из кода
 - [ ] Загрузка ключей при старте
 
@@ -136,14 +148,15 @@
 
 ### Тесты
 - [ ] Запустить **все** тесты на реальном ESP32
-- [ ] Тесты для `program_loader`
-- [ ] Тесты для формата пакета TUR55
+- [ ] Тесты для `execution_engine`
 
 ### Документация
-- [ ] README — обновить статус TUR55
+- [ ] README — обновить статус TUR55 (сейчас описывает v2.0 со старой криптографией)
+- [ ] README_RU — обновить
 - [ ] CHANGELOG — записать всё сделанное
 - [ ] `TUR55_COMPLIANCE.md` — таблица соответствия
-- [ ] `BUILD_GCM_FIRMWARE.md` — обновить (добавить ucryptography + secp256k1)
+- [ ] `PROJECT_HISTORY.md` — добавить Сессии 7, 8
+- [ ] `BUILD_GCM_FIRMWARE.md` — обновить
 - [ ] `FIRMWARE_WITH_UCRYPTOGRAPHY.md` — обновить
 
 ### Продакшн
@@ -155,17 +168,17 @@
 
 ## Текущий статус
 
-**Готово:** **~55%** TUR55/Bronze
+**Готово:** **~65%** TUR55/Bronze
 
 | Раздел | Статус |
 |---|---|
-| **Раздел 3.4** — формат пакета | ✅ **РАБОТАЕТ end-to-end** |
+| **Раздел 3.4** — формат пакета | ✅ Работает end-to-end |
 | **Раздел 4** — AES-256-GCM | ✅ NIST 3/3 |
 | **Раздел 4** — ECDSA secp256k1 | ✅ Работает |
 | **Раздел 4** — RSA-OAEP | ✅ Работает |
 | **Раздел 4** — BLAKE2s | ✅ Работает |
 | **Раздел 4** — eFuse | ❌ |
-| **Раздел 5** — expires / command_id | ❌ |
+| **Раздел 5** — expires / command_id | ✅ **ЗАКРЫТО** |
 | **Раздел 6** — whitelist / таймаут / память | ✅ |
 
 **Что сделано:**
@@ -174,12 +187,12 @@
 - ✅ ucryptography (RSA-OAEP, BLAKE2s)
 - ✅ secp256k1 (Bitcoin Core)
 - ✅ Формат пакета TUR55
-
+- ✅ Интеграция `program_loader.py` (Заход 1)
+- ✅ Replay protection + expires (Заход 2)
 
 **Что осталось:**
-- Интеграция в `program_loader.py`
-- Проверка `expires` и `command_id`
-- eFuse
+- `execution_engine.py` — интеграция с `program_loader`
+- eFuse для ключей
 - Сетевой стек (MQTT)
 - Физическая доставка
 - Документация
