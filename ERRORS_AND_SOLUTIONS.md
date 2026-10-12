@@ -298,6 +298,85 @@ oaep = padding.OAEP(mgf, hashes.SHA256(), None)
 
 ---
 
+## 16. coincurve не устанавливается на Python 3.14
+
+**Симптом:**
+```powershell
+RuntimeError: Expected exactly one LICENSE file in cffi distribution, got 0
+```
+(coincurve 21.0.0)
+
+```powershell
+ERROR: Use build.verbose instead of cmake.verbose for scikit-build-core >= 0.10
+```
+(coincurve 20.0.0)
+
+**Причина:** нет готовых wheel-пакетов для Python 3.14 на Windows.
+pip собирает из исходников — падает.
+
+**Решение:** использовать **`embit`** вместо `coincurve`:
+```powershell
+py -m pip install embit
+```
+---
+
+## 17. ECDSA подпись не совпадает (CPython vs ESP32)
+
+**Симптом:**
+```
+InvalidSignature: 0
+```
+Подпись создана cryptography (CPython), не проходит проверку usecp256k1 (ESP32).
+
+**Причина:** cryptography (OpenSSL) и usecp256k1 (libsecp256k1) по-разному реализуют RFC 6979.
+
+**Решение:** использовать embit на CPython — ту же библиотеку (libsecp256k1).
+
+---
+
+## 18. RSA decrypt падает (RuntimeError)
+
+**Симптом:**
+
+```
+RuntimeError: rsa_decrypt
+```
+**Причина:** n (модуль) в esp32_private_key.json не совпадал с ключом на CPython. Старый JSON остался на ESP32.
+
+**Решение:** залить esp32_private_key.json заново через MicroPico.
+
+**Проверка:**
+
+CPython: dd51d7e093874b36...
+
+ESP32: dd51d7e093874b36... ← должны совпадать
+
+---
+
+## 19. Обёртка mp_obj_int_to_bytes (детали)
+
+**Симптом:**
+
+```
+error: implicit declaration of function 'mp_obj_int_to_bytes'
+```
+
+**Причина:** функция удалена в MicroPython v1.24.1.
+
+**Решение:** обёртка в modcryptography.c:
+
+```c
+static void mp_obj_int_to_bytes(mp_obj_t obj, size_t len, byte *buf,
+                                 bool big_endian, bool signed_flag, bool overflow_check) {
+    (void)signed_flag;
+    (void)overflow_check;
+    mp_obj_int_to_bytes_impl(obj, big_endian, len, buf);
+}
+```
+
+
+---
+
 ## Сводная таблица
 
 | # | Ошибка | Решение |
@@ -317,4 +396,7 @@ oaep = padding.OAEP(mgf, hashes.SHA256(), None)
 | 13 | Python-пакеты | install.sh заново |
 | 14 | MicroPico завис | miniterm |
 | 15 | Keyword args | Позиционные |
-
+| 16 | coincurve не ставится | embit |
+| 17 | ECDSA подписи разные | embit на CPython |
+| 18 | RSA decrypt падает | Перезалить JSON |
+| 19 | `mp_obj_int_to_bytes` удалена | Обёртка над `mp_obj_int_to_bytes_impl` |

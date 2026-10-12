@@ -12,6 +12,7 @@
 | **ucryptography** | BLAKE2s | Раздел 4 |
 | **ucryptography** | RSA-OAEP | Раздел 4 |
 | **ucryptography** | ECDSA | Раздел 4 |
+| **usecp256k1** | ECDSA secp256k1 | Раздел 4 |
 
 ## Проверка на ESP32
 
@@ -53,3 +54,18 @@ sk_ec = ec.generate_private_key(ec.SECP256R1())
 sig_ec = sk_ec.sign(b'test', ec.ECDSA(hashes.SHA256()))
 sk_ec.public_key().verify(sig_ec, b'test', ec.ECDSA(hashes.SHA256()))
 print('ECDSA OK')
+
+# secp256k1
+import usecp256k1
+import hashlib
+secret = hashlib.sha256(b"test").digest()
+pubkey_obj = usecp256k1.ec_pubkey_create(secret)
+pubkey = usecp256k1.ec_pubkey_serialize(pubkey_obj, usecp256k1.EC_COMPRESSED)
+msg_hash = hashlib.sha256(b"hello").digest()
+sig = usecp256k1.ecdsa_sign(msg_hash, secret)
+der = usecp256k1.ecdsa_signature_serialize_der(sig)
+sig_obj = usecp256k1.ecdsa_signature_parse_der(der)
+pubkey_obj2 = usecp256k1.ec_pubkey_parse(pubkey)
+ok = usecp256k1.ecdsa_verify(sig_obj, msg_hash, pubkey_obj2)
+print('secp256k1 verify:', ok)
+# Ожидаем: True

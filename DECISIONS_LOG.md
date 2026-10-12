@@ -197,6 +197,33 @@ HEADER (8) + PUBKEY (34) + SESSION_KEY (258) + SCRIPT (iv+len+ct+tag) + SIGNATUR
 
 ---
 
+## Решение 12: embit вместо coincurve для CPython
+
+**Дата:** 2026-10-12
+
+**Контекст:** `coincurve` не устанавливается на Python 3.14 (Windows).
+Ошибки: `Expected exactly one LICENSE file` (21.0.0),
+`scikit-build-core >= 0.10` (20.0.0).
+
+**Выбранный вариант:** **embit**
+
+**Альтернативы:**
+- **coincurve 21.0.0** — не собирается — **отвергнуто**
+- **coincurve 20.0.0** — не собирается — **отвергнуто**
+- **cryptography EC** — разные подписи с `usecp256k1` — **отвергнуто**
+- **ctypes + libsecp256k1** — сложно — **отвергнуто**
+
+**Обоснование:**
+- `embit` — **чистый Python** (без компиляторов)
+- **Совместим** с `usecp256k1` (обе — libsecp256k1-подобные)
+- **Работает** на Python 3.14
+- **Подписывает** те же 32-байтные хеши
+
+**Проверено:**
+- `embit` sign + `usecp256k1` verify — **OK**
+
+---
+
 ## Сводная таблица решений
 
 | # | Решение | Дата | Альтернативы |
@@ -212,6 +239,7 @@ HEADER (8) + PUBKEY (34) + SESSION_KEY (258) + SCRIPT (iv+len+ct+tag) + SIGNATUR
 | 9 | PUBKEY в пакете | 11.10 | Ed25519 формат |
 | 10 | Без OTA | 12.10 | OTA, SD, внешняя flash |
 | 11 | Файловая система отложена | 12.10 | Partition, SD, flash |
+| 12 | embit для CPython | 12.10 | coincurve 21/20, cryptography EC |
 
 
 ## Дальше
