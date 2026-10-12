@@ -116,13 +116,32 @@ def main():
     print("   Executor secp256k1: OK")
     print("   Pubkey:", exec_pubkey.hex())
 
-    # 2. JSON
+    # 2. JSON (конверт TUR55, раздел 3.2)
     print("\n2. Building JSON...")
     json_data = {
         "tur55_version": "1.0",
         "command_id": "0x7e5f8a3c",
         "device_id": "esp32_001",
-        "script": "print('hello from ESP32')"
+        "source": {
+            "smart_contract": "0x1234",
+            "transaction_hash": "0xabcd",
+            "block_number": 12345678
+        },
+        "execution": {
+            "user_wallet": "0xUserWallet",
+            "amount": 50.5,
+            "expires": 1741500000,
+            "runtime_limit_ms": 5000,
+            "memory_limit_kb": 25,
+            "permissions": ["gpio", "time"],
+            "setup": ["led = machine.Pin(2, machine.Pin.OUT)"],
+            "loop_logic": ["led.value(1)", "time.sleep(0.5)"],
+            "functions": []
+        },
+        "custom_data": {
+            "action": "unlock",
+            "duration": 30
+        }
     }
     print("   JSON:", json_data)
 

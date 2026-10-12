@@ -40,6 +40,20 @@ except ImportError:
     from cryptography.hazmat.primitives.asymmetric import ec
     _HAS_UECP = False
 
+# CPython: embit для secp256k1 (совместим с usecp256k1)
+try:
+    from embit import ec as embit_ec
+    _HAS_EMBIT = True
+except ImportError:
+    _HAS_EMBIT = False
+
+# CPython: embit для secp256k1 (совместим с usecp256k1)
+try:
+    from embit import ec as embit_ec
+    _HAS_EMBIT = True
+except ImportError:
+    _HAS_EMBIT = False
+
 import gcm_adapter as gcm
 
 
@@ -78,7 +92,6 @@ def _ecdsa_keygen():
         pubkey_bytes = bytes([prefix]) + x
         return secret, pubkey_bytes
 
-
 def _ecdsa_sign(msg_hash, secret):
     """
     Подписывает 32-байтный хеш.
@@ -89,12 +102,14 @@ def _ecdsa_sign(msg_hash, secret):
     if _HAS_UECP:
         sig_obj = usecp256k1.ecdsa_sign(msg_hash, secret)
         return usecp256k1.ecdsa_signature_serialize_der(sig_obj)
+    elif _HAS_EMBIT:
+        from embit.ec import PrivateKey
+        priv = PrivateKey(secret)
+        sig = priv.sign(msg_hash)
+        return sig.serialize()
     else:
-        # CPython — через cryptography
-        # Пока заглушка: используем cryptography ec
-        raise NotImplementedError("CPython ECDSA sign — реализуем позже")
-
-
+        raise NotImplementedError("No ECDSA signer available")
+    
 def _ecdsa_verify(sig_der, msg_hash, pubkey_bytes):
     """
     Проверяет подпись.
@@ -106,9 +121,13 @@ def _ecdsa_verify(sig_der, msg_hash, pubkey_bytes):
         sig_obj = usecp256k1.ecdsa_signature_parse_der(sig_der)
         pubkey_obj = usecp256k1.ec_pubkey_parse(pubkey_bytes)
         return usecp256k1.ecdsa_verify(sig_obj, msg_hash, pubkey_obj)
+    elif _HAS_EMBIT:
+        from embit.ec import PublicKey, Signature
+        pub = PublicKey.parse(pubkey_bytes)
+        sig = Signature.parse(sig_der)
+        return pub.verify(sig, msg_hash)
     else:
-        raise NotImplementedError("CPython ECDSA verify — реализуем позже")
-
+        raise NotImplementedError("No ECDSA verifier available")
 
 # ====================================================================
 # ДЛЯ ЭКЗЕКУТОРА (сервер)
