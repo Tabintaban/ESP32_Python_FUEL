@@ -3,14 +3,14 @@ __pycache__/
 *.pyc
 *.pyo
 
-# VSCode (личные настройки)
+# VSCode (personal settings)
 .vscode/
 
-# Тестовые артефакты
+# Test artifacts
 out.txt
 *.tmp
 
-# Файлы, которые не нужны в репо
+# Files not needed in repo
 test_output.txt
 test_results.txt
 # TUR55 test artifacts
