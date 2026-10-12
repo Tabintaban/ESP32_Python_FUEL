@@ -13,3 +13,8 @@ out.txt
 # Файлы, которые не нужны в репо
 test_output.txt
 test_results.txt
+# TUR55 test artifacts
+esp32_private_key.json
+esp32_private_key.bin
+test_packet.bin
+executor_pubkey.bin
