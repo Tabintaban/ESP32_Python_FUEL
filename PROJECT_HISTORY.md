@@ -115,17 +115,47 @@
 
 ---
 
-## Сессия 5 (2026-10-12, текущая)
+## Сессия 5 (2026-10-12)
 
 ### Что делали
 - Создание базы знаний (PROJECT_HISTORY, ERRORS, DECISIONS)
 - Обсуждение partition table и файловой системы
 - Обсуждение OTA и обновлений
+- **Round-trip тест TUR55** — CPython → ESP32
 
-### Проблемы к решению
-- **Partition table** — нет файловой системы для пакетов
-- **Round-trip** — не проверен на ESP32
-- **Интеграция** в `program_loader.py`
+### Результаты
+- ✅ **Round-trip работает end-to-end**
+- ✅ `build_packet_cpython.py` — генерация пакета на CPython
+- ✅ `decrypt_packet_esp32.py` — расшифровка на ESP32
+- ✅ `embit` вместо `coincurve` — совместим с `usecp256k1`
+- ✅ ECDSA подписи совпадают (libsecp256k1-совместимо)
+- ✅ RSA-OAEP работает
+- ✅ AES-256-GCM работает
+- ✅ **Получен JSON на ESP32**
+
+### Ошибки
+- `coincurve` не ставится на Python 3.14
+  - **Решение:** `embit`
+- ECDSA подписи разные (cryptography vs usecp256k1)
+  - **Решение:** `embit` (libsecp256k1)
+- RSA decrypt падает
+  - **Причина:** старый ключ на ESP32
+  - **Решение:** перезалить `esp32_private_key.json`
+
+### Ключевые решения
+- **`embit` для CPython** (совместим с ESP32)
+- **Round-trip** — подтверждён
+
+---
+
+## Сессия 6 (план)
+
+### Задачи
+1. Интеграция `parse_packet()` в `program_loader.py`
+2. Проверка `expires` (раздел 5)
+3. Файловая система для `programs/`
+4. eFuse для ключей
+5. Сетевой стек (MQTT)
 
 ---
 
@@ -142,16 +172,18 @@
 | 2026-10-11 | Заглушки 3DES | DES удалён в ESP-IDF v5.0 |
 | 2026-10-11 | secp256k1 (Bitcoin Core) | Ed25519 сломан, TUR55 требует secp256k1 |
 | 2026-10-11 | Формат пакета TUR55 | JWE-inspired |
+| 2026-10-12 | embit для CPython | coincurve не ставится |
+| 2026-10-12 | Round-trip TUR55 | Подтверждение формата |
 
 ---
 
 ## Текущий статус
 
-**~50% TUR55/Bronze**
+**~55% TUR55/Bronze**
 
 | Раздел | Статус |
 |---|---|
-| 3.4 — формат пакета | ✅ Написан |
+| 3.4 — формат пакета | ✅ **РАБОТАЕТ end-to-end** |
 | 4 — AES-256-GCM | ✅ |
 | 4 — ECDSA secp256k1 | ✅ |
 | 4 — RSA-OAEP | ✅ |
@@ -163,12 +195,10 @@
 ---
 
 ## Что осталось
-
-1. **Round-trip тест** (CPython → ESP32)
-2. **Partition table** — файловая система
-3. **Интеграция** в `program_loader.py`
-4. **Проверка expires** / command_id
-5. **eFuse**
-6. **Сетевой стек** (MQTT)
-7. **Документация**
+1. **Интеграция** в `program_loader.py`
+2. **Проверка expires** / command_id
+3. **Partition table** — файловая система
+4. **eFuse**
+5. **Сетевой стек** (MQTT)
+6. **Документация**
 

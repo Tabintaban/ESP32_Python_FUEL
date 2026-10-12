@@ -88,9 +88,23 @@
 
 ## Часть 3. Что нужно сделать
 
+### Шаг 3.6 — Round-trip тест (CPython → ESP32)
+- [x] Создан `build_packet_cpython.py` (CPython-версия build_packet)
+- [x] Использован `embit` вместо `coincurve` (совместим с `usecp256k1`)
+- [x] Пакет сгенерирован на CPython: 521 байт
+- [x] Создан `esp32_private_key.json` (RSA компоненты: n, e, d, p, q, dmp1, dmq1, iqmp)
+- [x] Создан `executor_pubkey.bin` (33 байта)
+- [x] Создан `decrypt_packet_esp32.py` (расшифровка на ESP32)
+- [x] **Проверка RSA-OAEP self-test:** работает
+- [x] **Проверка ECDSA (embit vs usecp256k1):** работает
+- [x] **ROUND-TRIP: УСПЕХ** ✅
+  - CPython: JSON → ECDSA sign → RSA-OAEP → AES-GCM → пакет
+  - ESP32: пакет → ECDSA verify → RSA-OAEP decrypt → AES-GCM decrypt → JSON
+  - Результат: `{'tur55_version': '1.0', 'command_id': '0x7e5f8a3c', 'device_id': 'esp32_001', 'script': "print('hello from ESP32')"}`
+
 ### Формат пакета TUR55 — тестирование
-- [ ] Полный round-trip: сгенерировать пакет на CPython → залить на ESP32 → расшифровать
-- [ ] Проверить `parse_packet` на ESP32 с реальным пакетом
+- [x] Полный round-trip: сгенерировать пакет на CPython → залить на ESP32 → расшифровать
+- [x] Проверить `parse_packet` на ESP32 с реальным пакетом
 - [ ] JSON-конверт по разделу 3.2: `tur55_version`, `command_id`, `device_id`, `source`, `execution`, `custom_data`
 
 ### Интеграция
@@ -141,11 +155,11 @@
 
 ## Текущий статус
 
-**Готово:** **~50%** TUR55/Bronze
+**Готово:** **~55%** TUR55/Bronze
 
 | Раздел | Статус |
 |---|---|
-| **Раздел 3.4** — формат пакета | ✅ Написан |
+| **Раздел 3.4** — формат пакета | ✅ **РАБОТАЕТ end-to-end** |
 | **Раздел 4** — AES-256-GCM | ✅ NIST 3/3 |
 | **Раздел 4** — ECDSA secp256k1 | ✅ Работает |
 | **Раздел 4** — RSA-OAEP | ✅ Работает |
@@ -161,8 +175,8 @@
 - ✅ secp256k1 (Bitcoin Core)
 - ✅ Формат пакета TUR55
 
+
 **Что осталось:**
-- Полный round-trip тест
 - Интеграция в `program_loader.py`
 - Проверка `expires` и `command_id`
 - eFuse
