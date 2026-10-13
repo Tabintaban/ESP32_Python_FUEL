@@ -101,14 +101,23 @@ class ExecutionEngine:
         except Exception as e:
             result = {'success': False, 'error': str(e)}
         
-        # Сохраняем контекст выполнения
+        # Сохраняем контекст выполнения.
+        # Объединяем globals и locals: на верхнем уровне exec() переменные
+        # могут попасть в locals, а не globals (зависит от CPython/MicroPython).
+        setup_globals = result.get('globals', {}) or {}
+        setup_locals = result.get('locals', {}) or {}
+
+        merged = {}
+        merged.update(setup_globals)
+        merged.update(setup_locals)
+
         context_id = 'setup_context'
         self.execution_contexts[context_id] = {
-            'globals': result.get('globals', {}),
-            'locals': result.get('locals', {}),
+            'globals': setup_globals,
+            'locals': setup_locals,
+            'merged': merged,
             'timestamp': get_time_ms()
-        }
-        
+        }        
         return result
         
     def execute_loop(self, loop_code, max_iterations=None, globals_dict=None, locals_dict=None):
@@ -130,12 +139,18 @@ class ExecutionEngine:
         if max_iterations is None:
             max_iterations = self.max_iterations
 
-        if globals_dict is None:
-            # Используем глобалы из контекста установки
-            globals_dict = self.execution_contexts.get('setup_context', {}).get('globals', {})
-        if locals_dict is None:
-            locals_dict = {}
-
+        if globals_dict is None or locals_dict is None:
+            ctx = self.execution_contexts.get('setup_context', {})
+            # merged содержит и globals, и locals от setup — так loop видит
+            # переменные, объявленные в setup, независимо от CPython/MicroPython.
+            merged = ctx.get('merged')
+            if merged is None:
+                merged = ctx.get('globals', {})
+            if globals_dict is None:
+                globals_dict = merged
+            if locals_dict is None:
+                locals_dict = merged
+                
         self._loop_running = True
         iteration_count = 0
         start_time = get_time_ms()
