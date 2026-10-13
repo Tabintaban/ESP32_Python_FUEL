@@ -54,18 +54,25 @@ def main():
     # 4. ExecutionEngine
     print("\n4. ExecutionEngine...")
     try:
-        engine = ExecutionEngine(memory_limit_kb=25, time_limit_ms=5000)
+        engine = ExecutionEngine(memory_limit_kb=50, time_limit_ms=9000)
         print("   OK")
     except Exception as e:
         print("   FAILED:", e)
         traceback.print_exc()
         return 1
 
+    print("\n4.5. Limits before execute_program:")
+    print("   memory_limit_bytes:", engine.sandbox.memory_limit_bytes)
+    print("   time_limit_ms:     ", engine.sandbox.time_limit_ms)
+
     # 5. execute_program
     print("\n5. execute_program (setup + loop)...")
     try:
         result = engine.execute_program(data, max_iterations=5)
         print("   success:", result.get('success'))
+        print("\n5.5. Limits after execute_program:")
+        print("   memory_limit_bytes:", engine.sandbox.memory_limit_bytes)
+        print("   time_limit_ms:     ", engine.sandbox.time_limit_ms)
     except Exception as e:
         print("   FAILED:", e)
         traceback.print_exc()

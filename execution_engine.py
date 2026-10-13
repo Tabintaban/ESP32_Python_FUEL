@@ -305,6 +305,9 @@ class ExecutionEngine:
         """
         Выполнение программы из конверта TUR55 (раздел 3.2).
 
+        Лимиты ресурсов берутся из execution пакета и применяются к sandbox
+        на время выполнения. После завершения — восстанавливаются дефолтные.
+
         Args:
             program_data: dict — вывод program_loader.load_program()
             max_iterations: int | None — лимит итераций цикла
@@ -329,33 +332,56 @@ class ExecutionEngine:
         setup_code = '\n'.join(function_lines + setup_lines)
         loop_code = '\n'.join(loop_lines)
 
-        # Выполняем setup
-        setup_result = self.execute_setup(setup_code)
+        # === ЛИМИТЫ ИЗ КОНВЕРТА TUR55 ===
+        # Запоминаем текущие лимиты sandbox
+        saved_mem_kb = self.sandbox.memory_limit_bytes // 1024
+        saved_time_ms = self.sandbox.time_limit_ms
 
-        if not setup_result.get('success', False):
-            return {
-                'success': False,
-                'error': 'Setup execution failed',
-                'setup_result': setup_result
-            }
+        pkg_mem_kb = execution.get('memory_limit_kb')
+        pkg_time_ms = execution.get('runtime_limit_ms')
 
-        # Если loop пустой — только setup
-        if not loop_code.strip():
+        try:
+            # Применяем лимиты пакета, если они заданы
+            if pkg_mem_kb is not None or pkg_time_ms is not None:
+                self.sandbox.limit_resources(
+                    memory_limit_kb=pkg_mem_kb,
+                    time_limit_ms=pkg_time_ms
+                )
+            
+            # Выполняем setup
+            setup_result = self.execute_setup(setup_code)
+
+            if not setup_result.get('success', False):
+                return {
+                    'success': False,
+                    'error': 'Setup execution failed',
+                    'setup_result': setup_result
+                }
+
+            # Если loop пустой — только setup
+            if not loop_code.strip():
+                return {
+                    'success': True,
+                    'setup_result': setup_result,
+                    'loop_result': {'iterations_completed': 0, 'success': True}
+                }
+
+            # Выполняем loop
+            loop_result = self.execute_loop(loop_code, max_iterations)
+
             return {
                 'success': True,
                 'setup_result': setup_result,
-                'loop_result': {'iterations_completed': 0, 'success': True}
+                'loop_result': loop_result
             }
 
-        # Выполняем loop
-        loop_result = self.execute_loop(loop_code, max_iterations)
+        finally:
+            # Возвращаем дефолтные лимиты sandbox
+            self.sandbox.limit_resources(
+                memory_limit_kb=saved_mem_kb,
+                time_limit_ms=saved_time_ms
+            )
 
-        return {
-            'success': True,
-            'setup_result': setup_result,
-            'loop_result': loop_result
-        }
-            
     def stop_execution(self):
         """
         Остановка выполнения программы извне
