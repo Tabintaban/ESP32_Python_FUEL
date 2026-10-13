@@ -268,31 +268,61 @@ class ExecutionEngine:
             
         self.compiled_programs[program_id] = executable
         
-    def execute_program(self, executable, max_iterations=None):
+    def execute_program(self, program_data, max_iterations=None):
         """
-        Выполнение всей программы (setup + loop)
+        Выполнение программы из конверта TUR55 (раздел 3.2).
+
+        Args:
+            program_data: dict — вывод program_loader.load_program()
+            max_iterations: int | None — лимит итераций цикла
+
+        Returns:
+            dict — {'success': ..., 'setup_result': ..., 'loop_result': ...}
         """
-        # Выполняем setup часть
-        setup_code = executable.get('setup', '')
+        execution = program_data.get('execution', {})
+
+        setup_lines = execution.get('setup', [])
+        loop_lines = execution.get('loop_logic', [])
+        function_lines = execution.get('functions', [])
+
+        if not isinstance(setup_lines, list):
+            return {'success': False, 'error': 'execution.setup must be a list'}
+        if not isinstance(loop_lines, list):
+            return {'success': False, 'error': 'execution.loop_logic must be a list'}
+        if not isinstance(function_lines, list):
+            return {'success': False, 'error': 'execution.functions must be a list'}
+
+        # Собираем код: functions + setup
+        setup_code = '\n'.join(function_lines + setup_lines)
+        loop_code = '\n'.join(loop_lines)
+
+        # Выполняем setup
         setup_result = self.execute_setup(setup_code)
-        
+
         if not setup_result.get('success', False):
             return {
                 'success': False,
                 'error': 'Setup execution failed',
                 'setup_result': setup_result
             }
-            
-        # Выполняем loop часть
-        loop_code = executable.get('loop_logic', '')
+
+        # Если loop пустой — только setup
+        if not loop_code.strip():
+            return {
+                'success': True,
+                'setup_result': setup_result,
+                'loop_result': {'iterations_completed': 0, 'success': True}
+            }
+
+        # Выполняем loop
         loop_result = self.execute_loop(loop_code, max_iterations)
-        
+
         return {
             'success': True,
             'setup_result': setup_result,
             'loop_result': loop_result
         }
-        
+            
     def stop_execution(self):
         """
         Остановка выполнения программы извне
