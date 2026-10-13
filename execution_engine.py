@@ -244,35 +244,53 @@ class ExecutionEngine:
         
     def hot_swap(self, new_program):
         """
-        Горячая замена программы во время выполнения
+        Горячая замена программы из конверта TUR55 (раздел 3.2).
+
+        Args:
+            new_program: dict — вывод program_loader.load_program()
+
+        Returns:
+            dict — {'success': ..., 'program_id': ..., 'setup_result': ...}
         """
         if not self.hot_swap_enabled:
             return {'success': False, 'error': 'Hot swap is disabled'}
-            
+
         try:
+            execution = new_program.get('execution', {})
+
+            function_lines = execution.get('functions', [])
+            setup_lines = execution.get('setup', [])
+
+            if not isinstance(function_lines, list):
+                return {'success': False, 'error': 'execution.functions must be a list'}
+            if not isinstance(setup_lines, list):
+                return {'success': False, 'error': 'execution.setup must be a list'}
+
+            # Идентификатор — command_id (TUR55)
+            program_id = new_program.get('command_id', 'default')
+
+            # Останавливаем всё текущее: sandbox, WDT, флаги
+            self.stop_execution()
+
             # Обновляем скомпилированную программу
-            program_id = new_program.get('metadata', {}).get('id', 'default')
             self.compiled_programs[program_id] = new_program
-            
-            # Очищаем старые контексты выполнения
-            self.execution_contexts.clear()
-            
-            # Выполняем новый setup
-            setup_code = '\n'.join(new_program.get('setup', []))
+
+            # Выполняем новый setup (functions + setup)
+            setup_code = '\n'.join(function_lines + setup_lines)
             setup_result = self.execute_setup(setup_code)
-            
+
             return {
                 'success': True,
                 'program_id': program_id,
                 'setup_result': setup_result
             }
-            
+
         except Exception as e:
             return {
                 'success': False,
                 'error': str(e)
             }
-            
+                    
     def cache_compiled_programs(self, program_id, executable):
         """
         Кэширование скомпилированных программ
