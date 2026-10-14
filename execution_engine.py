@@ -93,14 +93,15 @@ class ExecutionEngine:
             locals_dict = {}
         
         try:
-            result = self.sandbox.execute_in_sandbox(setup_code, globals_dict, locals_dict)
-        except TimeoutError as e:
-            result = {'success': False, 'error': str(e)}
+            result = self.sandbox.execute_in_sandbox(
+                setup_code, globals_dict, locals_dict,
+                capture_output=False
+            )
         except MemoryError as e:
             result = {'success': False, 'error': str(e)}
         except Exception as e:
             result = {'success': False, 'error': str(e)}
-        
+
         # Сохраняем контекст выполнения.
         # Объединяем globals и locals: на верхнем уровне exec() переменные
         # могут попасть в locals, а не globals (зависит от CPython/MicroPython).
@@ -211,10 +212,6 @@ class ExecutionEngine:
                     print("Loop execution failed at iteration %d" % iteration_count)
                     break
 
-            except TimeoutError:
-                # Sandbox прервал выполнение по таймауту.
-                self._loop_running = False
-                raise
             except MemoryError:
                 # Sandbox обнаружил критический уровень памяти.
                 self._loop_running = False
@@ -223,6 +220,7 @@ class ExecutionEngine:
                 # Логируем, но продолжаем цикл для устойчивости.
                 print("Iteration %d error: %s" % (iteration_count, e))
 
+                
             iteration_count += 1
 
             # === ПАУЗА ДЛЯ ПЛАНИРОВЩИКА И GC ===

@@ -46,16 +46,27 @@ except ImportError:
 
 import time
 
-# Импортируем builtins для безопасного доступа к встроенным функциям
+# Импортируем builtins для безопасного доступа к встроенным функциям.
+# На CPython есть модуль builtins и функция vars().
+# На MicroPython их нет — но встроенные функции доступны напрямую,
+# поэтому _BUILTINS_DICT можно заполнить вручную.
 try:
     import builtins as _builtins_module
     _BUILTINS_DICT = vars(_builtins_module)
-except ImportError:
-    # MicroPython fallback
-    if isinstance(__builtins__, dict):
-        _BUILTINS_DICT = __builtins__
-    else:
-        _BUILTINS_DICT = __builtins__.__dict__ if hasattr(__builtins__, '__dict__') else {}
+except (ImportError, NameError):
+    # MicroPython: нет builtins, нет vars().
+    # Пробуем достать __builtins__ (в некоторых портах есть),
+    # иначе — соберём словарь из прямых ссылок на встроенные функции.
+    try:
+        _bi = __builtins__
+        if isinstance(_bi, dict):
+            _BUILTINS_DICT = _bi
+        elif hasattr(_bi, '__dict__'):
+            _BUILTINS_DICT = _bi.__dict__
+        else:
+            _BUILTINS_DICT = {}
+    except NameError:
+        _BUILTINS_DICT = {}
 
 # Попытка импорта аппаратных модулей ESP32
 try:
@@ -102,13 +113,10 @@ class SafeImporter:
         
         # Кэширование для производительности
         if name not in self._cache:
-            # __builtins__ может быть модулем или словарем в зависимости от окружения
-            if isinstance(__builtins__, dict):
-                import_func = __builtins__.get('__import__', __import__)
-            else:
-                import_func = getattr(__builtins__, '__import__', __import__)
-            self._cache[name] = import_func(name, globals, locals, fromlist, level)
-        
+            # В MicroPython __builtins__ может не быть — используем __import__
+            # напрямую (он доступен как встроенная функция).
+            self._cache[name] = __import__(name, globals, locals, fromlist, level)
+                    
         return self._cache[name]
 
 
@@ -177,10 +185,10 @@ class ExecutionSandbox:
         # Блокировка для безопасного доступа к флагам из ISR таймера.
         self._lock = _thread.allocate_lock() if _thread else _dummy_lock()
 
-        # Аппаратные ресурсы для надёжного таймаута.
-        self._watchdog = None        # machine.WDT — аппаратный сторож
-        self._watchdog_timeout_ms = 0
-        self._keepalive_timer = None # machine.Timer — периодический кормящий таймер
+          # Программный таймер для проверки таймаута (кооперативный).
+        # WDT не используется: в MicroPython на ESP32 его нельзя остановить
+        # после запуска (deinit не поддерживается), и он вызывает сбросы.
+        self._keepalive_timer = None
         self._keepalive_period_ms = 250
 
         # Разрешенные модули для ESP32
@@ -198,9 +206,15 @@ class ExecutionSandbox:
 
         self.safe_importer = SafeImporter(allowed_modules)
         self.safe_builtins = self._get_safe_builtins()
-        self.original_stdout = sys.stdout
-        self.original_stderr = sys.stderr
-        self.original_modules = sys.modules.copy()
+        # sys.stdout/sys.stderr есть только в CPython; в MicroPython их нет.
+        self.original_stdout = getattr(sys, 'stdout', None)
+        self.original_stderr = getattr(sys, 'stderr', None)
+        # sys.modules.copy() тоже недоступен в MicroPython.
+        try:
+            self.original_modules = sys.modules.copy()
+        except AttributeError:
+            self.original_modules = None
+
 
         # Инициализация монитора памяти из memory_optimizer
         try:
@@ -236,12 +250,23 @@ class ExecutionSandbox:
             # ЗАПРЕЩЕНО: __import__, getattr, setattr, delattr, vars
         ]
         
+        # На MicroPython _BUILTINS_DICT может быть пустым, но встроенные
+        # функции доступны напрямую как глобальные имена в модуле.
+        # Поэтому пробуем сначала builtins_dict, потом globals() модуля.
         for builtin_name in allowed_builtins:
             if builtin_name in builtins_dict:
                 safe_builtins[builtin_name] = builtins_dict[builtin_name]
-                
+            else:
+                # Fallback: берём из globals() текущего модуля.
+                # В MicroPython встроенные функции видны как глобальные имена.
+                try:
+                    safe_builtins[builtin_name] = globals()[builtin_name]
+                except KeyError:
+                    pass
+
         return safe_builtins
-    
+
+
     def _get_safe_memory_limit(self):
         """Определение безопасного лимита памяти (50% от свободной RAM)"""
         gc.collect()
@@ -325,7 +350,7 @@ class ExecutionSandbox:
             Словарь с результатами выполнения
 
         Raises:
-            TimeoutError: Если превышен лимит времени (мягкая кооперативная остановка)
+            RuntimeError: Если превышен лимит времени (мягкая кооперативная остановка)
             MemoryError: Если превышен лимит памяти
         """
         if globals_dict is None:
@@ -349,6 +374,13 @@ class ExecutionSandbox:
         sandbox_builtins = dict(self.safe_builtins)
         sandbox_builtins['__import__'] = self.safe_importer.__import__
 
+        # === ВЫВОД print ===
+        # В MicroPython print нельзя перехватить через __builtins__
+        # (print вшит в интерпретатор). Поэтому capture_output игнорируется,
+        # и print идёт напрямую в консоль.
+        # Если понадобится перехват — использовать os.dupterm().
+        _capture_buffer = []
+
         safe_globals = {
             '__builtins__': sandbox_builtins,
             '__name__': '__sandbox__',
@@ -357,29 +389,14 @@ class ExecutionSandbox:
         safe_globals.update(globals_dict)
         self._add_allowed_modules(safe_globals)
 
-        # Захват вывода
-        if StringIO is not None and capture_output:
-            captured_output = StringIO()
-            captured_error = StringIO()
-        else:
-            captured_output = None
-            captured_error = None
-
-        original_stdout = sys.stdout
-        original_stderr = sys.stderr
-
         # === ЗАПУСК НАДЁЖНОГО ТАЙМАУТА (WDT + кормящий таймер) ===
         with self._lock:
             self._is_running = True
             self._timeout_armed = False
             self._exec_start_ms = time.ticks_ms() if hasattr(time, 'ticks_ms') else 0
-        self._start_watchdog()
+        self._start_timer()
 
         try:
-            if capture_output and StringIO is not None:
-                sys.stdout = captured_output
-                sys.stderr = captured_error
-
             # Компиляция кода (вне WDT — компиляция безопасна по времени)
             compiled_code = compile(code, '<sandbox>', 'exec')
 
@@ -394,10 +411,10 @@ class ExecutionSandbox:
                 timed_out = self._timeout_armed and not self._is_running
 
             if timed_out:
-                raise TimeoutError(
+                raise RuntimeError(
                     "Execution exceeded time limit of %d ms" % self.time_limit_ms
                 )
-
+            
             # === ПРОВЕРКА ПАМЯТИ ПОСЛЕ ВЫПОЛНЕНИЯ ===
             if not self._check_memory_usage():
                 raise MemoryError("Memory limit exceeded after execution")
@@ -409,60 +426,39 @@ class ExecutionSandbox:
                 except Exception:
                     pass
 
-        except TimeoutError:
-            # Поднимаем дальше — это ожидаемая ошибка таймаута.
-            if capture_output and StringIO is not None:
-                sys.stdout = original_stdout
-                sys.stderr = original_stderr
-                if captured_error:
-                    captured_error.write("TimeoutError: execution exceeded time limit")
-                return {
-                    'output': captured_output.getvalue() if captured_output else "",
-                    'error': captured_error.getvalue() if captured_error else "timeout",
-                    'success': False,
-                    'timeout': True,
-                }
-            raise
-        except MemoryError:
-            if capture_output and StringIO is not None:
-                sys.stdout = original_stdout
-                sys.stderr = original_stderr
-                if captured_error:
-                    captured_error.write("MemoryError: memory limit exceeded")
-                return {
-                    'output': captured_output.getvalue() if captured_output else "",
-                    'error': captured_error.getvalue() if captured_error else "memory",
-                    'success': False,
-                    'memory_error': True,
-                }
-            raise
+        except RuntimeError:
+            # Ожидаемая ошибка таймаута.
+            return {
+                'output': ''.join(_capture_buffer) if capture_output else "",
+                'error': "RuntimeError: execution exceeded time limit",
+                'success': False,
+                'timeout': True,
+            }
+
+        except MemoryError:            
+            return {
+                'output': ''.join(_capture_buffer) if capture_output else "",
+                'error': "MemoryError: memory limit exceeded",
+                'success': False,
+                'memory_error': True,
+            }
         except Exception as e:
             # Общая ошибка выполнения кода в песочнице.
-            if capture_output and StringIO is not None:
-                sys.stdout = original_stdout
-                sys.stderr = original_stderr
-                if captured_error:
-                    captured_error.write("Error during execution: " + str(e))
-                return {
-                    'output': captured_output.getvalue() if captured_output else "",
-                    'error': captured_error.getvalue() if captured_error else str(e),
-                    'success': False,
-                }
-            raise
+            return {
+                'output': ''.join(_capture_buffer) if capture_output else "",
+                'error': str(e),
+                'success': False,
+            }
         finally:
             # === ОСТАНОВКА ТАЙМАУТА И WDT ===
             # ВАЖНО: это сработает даже если exec() упал с исключением.
             # Если же код завис и WDT уже «уморил» устройство — до сюда мы не
             # дойдём (произойдёт аппаратная перезагрузка), что и есть fail-secure.
-            self._stop_watchdog()
+            self._stop_timer()
 
             with self._lock:
                 self._is_running = False
                 self._timeout_armed = False
-
-            # Восстановление стандартных потоков
-            sys.stdout = original_stdout
-            sys.stderr = original_stderr
 
         result = {
             'globals': safe_globals,
@@ -470,107 +466,64 @@ class ExecutionSandbox:
             'success': True
         }
 
-        if capture_output and StringIO is not None:
-            result['output'] = captured_output.getvalue() if captured_output else ""
-            result['error'] = captured_error.getvalue() if captured_error else ""
-        elif capture_output:
-            result['output'] = ""
+        if capture_output:
+            result['output'] = ''.join(_capture_buffer)
             result['error'] = ""
 
         return result
     
-    def _start_watchdog(self):
+    def _start_timer(self):
         """
-        Запуск НАДЁЖНОГО механизма таймаута: WDT + периодический кормящий таймер.
+        Запуск программного таймера для проверки таймаута (кооперативный).
 
-        Логика (v3):
-          1. Создаём аппаратный WDT с таймаутом чуть больше периода кормящего
-             таймера (например, WDT=400 мс при периоде кормления 250 мс). Пока
-             кормящий таймер регулярно вызывает wdt.feed(), сброса нет.
-          2. Запускаем ПЕРИОДИЧЕСКИЙ machine.Timer (PERIODIC). В его колбэке:
-               - если код уложился в лимит и флаг _is_running=True -> кормим WDT;
-               - если лимит превышен ИЛИ stop_execution() сбросил флаг ->
-                 перестаём кормить WDT -> аппаратный сброс ESP32 (fail-secure).
-          3. Для кооперативного кода параллельно сбрасываем флаг _is_running,
-             чтобы цикл движка мог выйти мягко (без перезагрузки).
+        Логика:
+          - machine.Timer периодически (каждые ~250 мс) проверяет, не превысил
+            ли код time_limit_ms.
+          - Если превысил — выставляются флаги _timeout_armed=True и
+            _is_running=False.
+          - Кооперативный код (проверяющий _is_running) завершится сам.
+          - Не-кооперативный код (зависший в C-цикле) НЕ будет прерван.
 
-        На CPython/без machine — недоступно, метод тихо завершается (там нет
-        риска зависания на C-уровне в embedded-смысле).
+        Это соответствует «strict time limits» TUR55 в той мере, в какой
+        это возможно без аппаратного WDT.
+
+        На CPython/без machine — метод тихо завершается.
         """
         if not machine:
             return
 
-        # Период кормления: 250 мс по умолчанию (можно переопределить).
-        feed_period = self._keepalive_period_ms
-        # WDT таймаут: ~1.6x периода кормления, чтобы избежать ложных срабатываний
-        # из-за джиттера ISR, но гарантированно сработать при прекращении кормления.
-        wdt_timeout = int(feed_period * 1.6) + 50
-
         try:
-            self._watchdog = machine.WDT(timeout=wdt_timeout)
-            self._watchdog_timeout_ms = wdt_timeout
-        except Exception:
-            # На этой прошивке WDT недоступен — аппаратной гарантии не будет,
-            # но продолжаем с кооперативной остановкой через флаг.
-            self._watchdog = None
+            # Timer(-1) — виртуальный таймер (не привязан к аппаратному).
+            self._keepalive_timer = machine.Timer(-1)
 
-        try:
-            self._keepalive_timer = machine.Timer(0)
-
-            def _keepalive_cb(t):
+            def _timeout_cb(t):
                 """
-                Колбэк периодического таймера (ISR-контекст: минимум действий).
-
-                Пока код выполняется и укладывается в лимит — кормим WDT.
-                При таймауте/остановке — перестаём кормить -> WDT сбросит ESP32.
+                Колбэк таймера: проверка таймаута (ISR-контекст).
                 """
-                keep = False
                 with self._lock:
                     running = self._is_running
                     armed = self._timeout_armed
                 if running and not armed:
-                    # Проверяем: не превысил ли код time_limit_ms.
                     if self._exec_start_ms and hasattr(time, 'ticks_ms'):
                         elapsed = time.ticks_diff(time.ticks_ms(), self._exec_start_ms)
                         if elapsed >= self.time_limit_ms:
-                            # Лимит исчерпан — выставляем armed и НЕ кормим.
                             with self._lock:
                                 self._is_running = False
                                 self._timeout_armed = True
-                            keep = False
-                        else:
-                            keep = True
-                    else:
-                        keep = True
-
-                if keep and self._watchdog is not None:
-                    try:
-                        self._watchdog.feed()
-                    except Exception:
-                        pass
-                # Иначе: не кормим -> WDT аппаратно перезагрузит устройство.
 
             self._keepalive_timer.init(
                 mode=machine.Timer.PERIODIC,
-                period=feed_period,
-                callback=_keepalive_cb
+                period=self._keepalive_period_ms,
+                callback=_timeout_cb
             )
         except Exception:
-            # Не удалось завести кормящий таймер. Если WDT уже запущен без
-            # кормления — устройство перезагрузится немедленно. Поэтому отменяем WDT,
-            # оставаясь в режиме кооперативной остановки через флаг.
-            self._watchdog = None
             self._keepalive_timer = None
 
-    def _stop_watchdog(self):
-        """
-        Корректная остановка WDT и кормящего таймера после завершения кода.
 
-        Важно: деинит таймера и сброс WDT выполняются всегда, иначе при
-        нормальном завершении кода WDT «уморит» устройство после первого же
-        выполнения.
+    def _stop_timer(self):
         """
-        # 1. Останавливаем кормящий таймер.
+        Остановка программного таймера после завершения кода.
+        """
         if self._keepalive_timer is not None:
             try:
                 self._keepalive_timer.deinit()
@@ -578,23 +531,7 @@ class ExecutionSandbox:
                 pass
             self._keepalive_timer = None
 
-        # 2. Деинициализируем WDT (если поддерживается).
-        if self._watchdog is not None:
-            try:
-                # На ESP32 WDT деинициализируется feed()-стоп или deinit.
-                self._watchdog.feed()  # последнее кормление перед отключением
-            except Exception:
-                pass
-            try:
-                self._watchdog.deinit()
-            except Exception:
-                pass
-            except AttributeError:
-                # В ряде портов у WDT нет deinit — он жив, пока жив инстанс.
-                pass
-            self._watchdog = None
-            self._watchdog_timeout_ms = 0
-    
+
     def _add_allowed_modules(self, globals_dict):
         """
         Добавление разрешенных модулей в глобальное окружение через SafeImporter
@@ -696,21 +633,18 @@ class ExecutionSandbox:
         Гарантированно останавливает WDT/таймер и сбрасывает флаги выполнения,
         восстанавливает оригинальные потоки вывода и sys.modules.
         """
-        # Останавливаем Watchdog и кормящий таймер если активны.
-        self._stop_watchdog()
+        # Останавливаем таймер.
+        self._stop_timer()
 
         # Сбрасываем флаги выполнения (новые имена: _is_running, _timeout_armed).
         with self._lock:
             self._is_running = False
             self._timeout_armed = False
 
-        # Восстановление оригинальных потоков
-        sys.stdout = self.original_stdout
-        sys.stderr = self.original_stderr
-
-        # Восстановление оригинальных модулей
-        sys.modules.clear()
-        sys.modules.update(self.original_modules)
+         # Восстановление оригинальных модулей (только если сохранили)
+        if self.original_modules is not None:
+            sys.modules.clear()
+            sys.modules.update(self.original_modules)
 
         # Очистка памяти
         gc.collect()
