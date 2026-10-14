@@ -391,9 +391,6 @@ ESP32_Python_FUEL/
 ├── CHANGELOG.md                         # Version history
 ├── BUILD_GCM_FIRMWARE.md                # Firmware build
 ├── FIRMWARE_WITH_UCRYPTOGRAPHY.md       # ucryptography details
-├── ESP32_MicroPython_Architecture_Plan.md
-├── PROJECT_SUMMARY.md                   # (historical)
-├── PROJECT_SUMMARY_RU.md                # (historical)
 ├── README.md                            # English version
 ├── README_RU.md                         # This file
 ├── LICENSE.md                           # MIT

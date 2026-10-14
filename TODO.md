@@ -16,7 +16,9 @@
 - [x] Создан проект `ESP32_Python_FUEL`
 - [x] Разработаны 14 Python-модулей
 - [x] Написаны 5 тестовых файлов
-- [x] Документация (README EN/RU, PROJECT_SUMMARY EN/RU, CHANGELOG)
+- [x] Документация (README EN/RU, CHANGELOG)
+- [x] `PROJECT_SUMMARY.md` / `_RU.md` — удалены (устарели)
+- [x] `ESP32_MicroPython_Architecture_Plan.md` — удалён (устарел)
 - [x] Архитектурный план
 - [x] Лицензия MIT
 
