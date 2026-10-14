@@ -1,212 +1,432 @@
-# ESP32 Secure Program Execution System
 
-## Overview
+# ESP32_Python_FUEL
 
-This project implements a secure system for ESP32 using MicroPython that allows dynamic loading, decrypting, and executing programs from encrypted JSON files. The system provides high performance, security, and isolated code execution.
+**Secure Execution Layer (Layer 4) of the TUR55 protocol.**
+Sandboxed MicroPython program execution for ESP32 with encryption, strict resource limits, and isolated runtime.
+
+[![Status](https://img.shields.io/badge/TUR55--Bronze-75%25-yellow)]()
+[![MicroPython](https://img.shields.io/badge/MicroPython-v1.24.1-blue)]()
+[![ESP--IDF](https://img.shields.io/badge/ESP--IDF-v5.2.2-blue)]()
+
+---
+
+## What is TUR55?
+
+**TUR55 (Trust Unified Regulation)** is an open standard for executing blockchain commands on IoT devices. It is blockchain-agnostic, transport-independent, and designed around sandboxed execution.
+
+**Author:** NOMOS-H
+**Fixed:** 2026-04-10
+**Repository:** https://github.com/Tabintaban/Protocol_TUR55
+
+### Four Sacred Layers
+
+| Layer | Purpose |
+|---|---|
+| **Event Layer** | Trigger from a smart contract |
+| **Executor Layer** | Forms the encrypted package |
+| **Delivery Layer** | Transport (MQTT, HTTP, BLE, LoRaWAN, QR) |
+| **Execution Layer** | Sandboxed execution on the device |
+
+**ESP32_Python_FUEL implements `Layer 4 — Execution Layer`.**
+
+---
+
+## Status
+
+**~75% TUR55/Bronze.**
+
+| Section | Status |
+|---|---|
+| 3.2 — TUR55 envelope | ✅ |
+| 3.4 — Packet format | ✅ works end-to-end |
+| 4 — AES-256-GCM | ✅ NIST 3/3 on ESP32 |
+| 4 — ECDSA secp256k1 | ✅ |
+| 4 — RSA-OAEP | ✅ |
+| 4 — BLAKE2s | ✅ |
+| 4 — eFuse | ❌ |
+| 5 — `command_id` (replay) | ✅ |
+| 5 — `expires` | ⏳ optional |
+| 6 — whitelist / timeout / memory | ✅ |
+
+**Pipeline works end-to-end on CPython and ESP32.**
+
+See [TUR55_COMPLIANCE.md](TUR55_COMPLIANCE.md) for the full compliance table.
+
+---
 
 ## Architecture
 
-The system consists of the following components:
+### Pipeline
 
-1. **CryptoManager** - Handles encryption/decryption using AES-CTR + HMAC-SHA256 (Encrypt-then-MAC)
-2. **ObjectFactory** - Creates dynamic objects with method injection from JSON
-3. **ExecutionSandbox** - Executes code in a secure, limited environment with SafeImporter
-4. **ProgramLoader** - Loads and validates programs from encrypted JSON files
-5. **FastJSONLoader** - Optimized JSON parser with newline preservation and syntax validation
-6. **LineBasedCompiler** - Efficiently compiles line-based code with safe indent normalization
-7. **ExecutionEngine** - Executes programs with caching, hot-swapping, and thread-based timeout
-8. **LightweightSecurity** - HMAC-SHA256 signature verification with replay protection
-9. **MemoryOptimizer** - Manages memory with pre-execution checking and runtime monitoring
+```
+TUR55 packet (bytes)
+    │
+    ▼
+parse_packet()             ── ECDSA verify + RSA-OAEP decrypt + AES-GCM decrypt
+    │
+    ▼
+validate envelope 3.2      ── program_loader
+    │
+    ▼
+validate permissions       ── execution.permissions
+validate runtime limits    ── runtime_limit_ms, memory_limit_kb
+validate expires           ── optional (if time_synced)
+validate command_id        ── replay protection (FIFO 100)
+    │
+    ▼
+execute_program()          ── execution_engine
+    │
+    ├─ setup (functions + setup lines)
+    └─ loop (loop_logic lines)
+    │
+    ▼
+sandbox                    ── execution_sandbox (whitelist + cooperative timeout)
+```
 
-## Features
+### Modules
 
-### Security
-- AES-CTR + HMAC-SHA256 encryption (Encrypt-then-MAC scheme)
-- HMAC-SHA256 signature verification with replay protection (nonce/timestamp)
-- Isolated execution in sandbox with SafeImporter (module whitelist)
-- Blocked dangerous builtins: __import__, eval, exec, compile, getattr, setattr, delattr
-- Constant-time comparison for tag verification (prevents timing attacks)
-- Thread-based timeout mechanism for interrupting hung code
-- Pre-execution memory checking and runtime monitoring
-- Safe indent normalization (prevents tabs/spaces mixing)
-- Structured logging with levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+| Module | Purpose |
+|---|---|
+| `main.py` | Entry point — standard pipeline |
+| `program_loader.py` | Parse + validate TUR55 envelope |
+| `execution_engine.py` | Setup + loop execution |
+| `execution_sandbox.py` | Sandbox (whitelist, timeout, memory) |
+| `tur55_packet.py` | TUR55 packet format (build + parse) |
+| `gcm_adapter.py` | Unified GCM interface |
+| `gcm.py` | GCM on pure Python (CPython fallback) |
+| `memory_optimizer.py` | Memory management |
 
-### Performance
-- Load to execution time < 500ms
-- RAM consumption < 50KB per program
-- Hot-reload support without restart
-- Compiled code caching
+---
 
-### ESP32 Optimizations
-- Uses bytearray instead of str where possible
-- Pre-allocated buffers
-- Memory monitoring and cleanup
-- Batch data processing
+## Cryptography
+
+| Algorithm | Purpose | Implementation |
+|---|---|---|
+| **AES-256-GCM** | Symmetric encryption | C-module on mbedTLS |
+| **ECDSA secp256k1** | Signature | `usecp256k1` (Bitcoin Core) |
+| **RSA-OAEP** | Session key encryption | `ucryptography` |
+| **BLAKE2s** | Hashing | `ucryptography` |
+
+**Compliance:** AES-256-GCM passed **NIST SP 800-38D** tests (3/3) on ESP32.
+
+**CPython compatibility:** `embit` (libsecp256k1-compatible) for signatures.
+
+---
 
 ## Requirements
 
-- ESP32 microcontroller
-- MicroPython firmware with:
-  - File system (LittleFS/SPIFFS)
-  - Cryptographic operations (AES/ChaCha20)
-  - JSON parsing
+| Component | Version | Why |
+|---|---|---|
+| **MicroPython** | **v1.24.1** | Stable release |
+| **ESP-IDF** | **v5.2.2** | Compatible with v1.24.1 |
+| **ESP32** | ESP32-D0WDQ6-V3 (WROOM) | Without PSRAM |
+| **Python (WSL)** | 3.10.12 | ESP-IDF requirement |
 
-## Installation
+**ESP-IDF v5.1.2 and v5.3.2 — NOT suitable.**
 
- 1. Flash your ESP32 with MicroPython
- 2. Copy all `.py` files to the ESP32 file system
- 3. Create a `programs/` directory for encrypted program files
- 4. Create a `data/` directory for decrypted HTML, CSS, and JS files
+---
 
-## Usage
+## Quick Start
 
-The system now works with two types of folders:
-- `programs/` - for encrypted program files
-- `data/` - for decrypted HTML, CSS, and JS files
+### 1. Build custom firmware
 
-### Basic Usage
-```python
-from fast_json_loader import FastJSONLoader
-from line_compiler import LineBasedCompiler
-from execution_engine import ExecutionEngine
+See [BUILD_GCM_FIRMWARE.md](BUILD_GCM_FIRMWARE.md) for full instructions.
 
-# Initialize components
-loader = FastJSONLoader()
-compiler = LineBasedCompiler()
-engine = ExecutionEngine()
+**Short version:**
 
-# Load and execute program
-json_data = loader.load_encrypted("programs/program.enc.json", device_key)
-code_blocks = loader.extract_code_lines(json_data)
-executable = compiler.build_executable(code_blocks)
+```bash
+# Activate ESP-IDF
+. ~/esp/esp-idf-v5.2.2/export.sh
 
-# Execute setup and loop
-engine.execute_setup(executable['setup'])
-engine.execute_loop(executable['loop_logic'], max_iterations=1000)
+# Build MicroPython with C-modules
+cd ~/micropython/ports/esp32
+rm -rf build-ESP32_GENERIC
+make BOARD=ESP32_GENERIC USER_C_MODULES=/home/tavintavan/cmodules/micropython.cmake
 ```
 
-### Complete System
-Run the main system with:
+### 2. Flash ESP32
+
+**Three files, three addresses:**
+
+| File | Address |
+|---|---|
+| `bootloader.bin` | `0x1000` |
+| `partition-table.bin` | `0x8000` |
+| `micropython.bin` | `0x10000` |
+
+```powershell
+py -m esptool --chip esp32 --port COM3 --baud 460800 write-flash --flash-mode dio --flash-size 4MB --flash-freq 40m -z 0x1000 "bootloader.bin" 0x8000 "partition-table.bin" 0x10000 "micropython.bin"
+```
+
+**WARNING:** Do NOT flash `micropython.bin` at `0x1000` — this causes boot loop.
+
+### 3. Upload modules to ESP32
+
+Upload via MicroPico or `mpremote`:
+
+```
+main.py
+program_loader.py
+execution_engine.py
+execution_sandbox.py
+tur55_packet.py
+gcm_adapter.py
+memory_optimizer.py
+test_packet_engine.bin
+esp32_private_key.json
+executor_pubkey.bin
+```
+
+### 4. Run
+
 ```python
 import main
 main.main()
 ```
 
-### Performance Testing
-Run performance benchmarks with:
-```python
-import performance_tests
-performance_tests.run_performance_tests()
+**Expected output:**
+
+```
+[INFO] === TUR55 Pipeline ===
+[INFO] Init ProgramLoader...
+[INFO] Init ExecutionEngine...
+[INFO] Loading packet: test_packet_engine.bin
+[INFO] command_id: 0xtest_engine_001
+[INFO] permissions: ['time', 'math']
+[INFO] runtime_limit_ms: 5000
+[INFO] memory_limit_kb:  25
+[INFO] Executing program (max_iterations=5)...
+setup done, x = 42
+loop iter 0 x = 42
+...
+[INFO] setup success:    True
+[INFO] loop iterations:  5
+[INFO] === Done ===
 ```
 
-## JSON Program Format
+---
+
+## TUR55 Envelope Format (section 3.2)
 
 ```json
 {
-  "metadata": {
-    "version": "1.0",
-    "signature": "ed25519_signature_here",
-    "timestamp": "2023-12-01T10:00:00Z",
-    "checksum": "sha256_checksum",
-    "author": "Author Name",
-    "description": "Program description"
+  "tur55_version": "1.0",
+  "command_id": "0x7e5f8a3c",
+  "device_id": "esp32_001",
+  "source": {
+    "smart_contract": "0x1234",
+    "transaction_hash": "0xabcd",
+    "block_number": 12345678
   },
-  "config": {
+  "execution": {
+    "user_wallet": "0xUserWallet",
+    "amount": 50.5,
+    "expires": 1741500000,
     "runtime_limit_ms": 5000,
     "memory_limit_kb": 25,
     "permissions": ["gpio", "time"],
-    "hot_reload_enabled": true
+    "functions": [],
+    "setup": ["led = machine.Pin(2, machine.Pin.OUT)"],
+    "loop_logic": ["led.value(1)", "time.sleep(0.5)"]
   },
-  "imports": [
-    "import machine",
-    "import time"
-  ],
-  "functions": [
-    "def blink_led(pin, duration):",
-    "    pin.value(1)",
-    "    time.sleep(duration)",
-    "    pin.value(0)",
-    "    time.sleep(duration)"
-  ],
-  "setup": [
-    "led_pin = machine.Pin(2, machine.Pin.OUT)"
-  ],
-  "loop_logic": [
-    "blink_led(led_pin, 0.5)",
-    "time.sleep(1)"
-  ]
+  "custom_data": {
+    "action": "unlock",
+    "duration": 30
+  }
 }
 ```
 
-## Security Measures
+---
 
-1. **Encryption**: All program files are AES-CTR + HMAC-SHA256 encrypted (Encrypt-then-MAC)
-2. **Signature Verification**: HMAC-SHA256 signatures with replay protection (nonce/timestamp)
-3. **Sandbox Execution**: Code runs in limited environment with SafeImporter (module whitelist)
-4. **Permission Control**: Restricted access to dangerous functions (blocked: __import__, eval, exec, compile, getattr, setattr, delattr)
-5. **Resource Limits**: Time and memory constraints enforced with thread-based timeout
-6. **Input Sanitization**: All inputs are validated and cleaned
-7. **Timing Attack Protection**: Constant-time comparison for tag verification
-8. **Memory Safety**: Pre-execution memory checking and runtime monitoring
+## TUR55 Packet Format (section 3.4)
 
-## Performance Benchmarks
+**Binary, JWE-inspired:**
 
-The system meets these performance targets:
-- File load time: < 100ms
-- Decryption time: < 150ms
-- Compilation time: < 100ms
-- Execution startup: < 150ms
-- Total time: < 500ms
-- Memory usage: < 50KB per program
+```
+HEADER       8 bytes  (magic "TUR5", version, flags)
+PUBKEY       1 + 33   (compressed secp256k1)
+SESSION_KEY  2 + ~256 (RSA-OAEP encrypted)
+SCRIPT       12 + 4 + N + 16  (iv + length + ct + tag)
+SIGNATURE    2 + M    (DER-encoded ECDSA secp256k1)
+```
 
-## Example: LED Control Program
+**Signature covers:** `HEADER + PUBKEY + SESSION_KEY + SCRIPT`
+**AAD for GCM:** `HEADER + PUBKEY + SESSION_KEY`
 
-The repository includes an example LED control program (`led_control_program.json`) that demonstrates:
-- GPIO control
-- Timing functions
-- Loop execution
-- State management
+### Build a packet (executor side)
 
-## Memory Management
+```python
+import build_packet_cpython
 
-The system includes a MemoryOptimizer that:
-- Pre-allocates buffers to reduce fragmentation
-- Monitors memory usage
-- Performs garbage collection when needed
-- Optimizes bytearray usage
+packet = build_packet_cpython.build_packet(
+    json_data=my_envelope,
+    esp32_public_key=rsa_pubkey,
+    executor_sk=ecdsa_secret,
+    executor_pubkey=ecdsa_pubkey_bytes
+)
+```
+
+---
+
+## Security
+
+| Measure | Implementation |
+|---|---|
+| Encryption | AES-256-GCM (NIST 3/3) |
+| Signature | ECDSA secp256k1 |
+| Key exchange | RSA-OAEP |
+| Replay protection | `command_id` FIFO (100) |
+| Sandbox | `SafeImporter` with whitelist |
+| Blocked builtins | `eval`, `exec`, `compile`, `open`, `getattr` |
+| Timeout | Cooperative (`machine.Timer`) |
+| Memory limit | `_check_memory_usage` |
+| Limits from packet | `limit_resources` |
+
+### Allowed modules in sandbox
+
+`machine`, `time`, `math`, `struct`, `json`, `gc`
+
+### Blocked modules
+
+`sys`, `_thread`, `select`, `socket`, `ssl`, `network`, `uos`
+
+---
+
+## Documentation
+
+| File | Purpose |
+|---|---|
+| [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | Full history (9 sessions) |
+| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 23 key decisions |
+| [ERRORS_AND_SOLUTIONS.md](ERRORS_AND_SOLUTIONS.md) | 28 errors and fixes |
+| [TODO.md](TODO.md) | Current plan |
+| [TUR55_COMPLIANCE.md](TUR55_COMPLIANCE.md) | Compliance table |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [BUILD_GCM_FIRMWARE.md](BUILD_GCM_FIRMWARE.md) | Firmware build instructions |
+| [FIRMWARE_WITH_UCRYPTOGRAPHY.md](FIRMWARE_WITH_UCRYPTOGRAPHY.md) | ucryptography details |
+
+---
+
+## Known Limitations
+
+1. **eFuse** not implemented — keys stored in `esp32_private_key.json` (plaintext).
+2. **Cooperative timeout** — does not interrupt hung C code. No hard guarantee.
+3. **`used_command_ids` in RAM** — lost on reboot. Needs NVS.
+4. **`expires` not checked** — no time source (NTP/MQTT not implemented).
+5. **MQTT / network stack** — not implemented.
+6. **Physical delivery** (`programs/program.enc`) — not implemented.
+7. **`os.dupterm`** — not used (no `print` interception).
+
+---
 
 ## Testing
 
-The system includes comprehensive testing modules:
-- `performance_tests.py`: Measures system performance
-- Built-in validation in each component
-- Security checks throughout the pipeline
+| Test | Platform | Purpose |
+|---|---|---|
+| `test_program_loader.py` | CPython | ProgramLoader |
+| `test_loader_replay.py` | CPython | Replay + expires |
+| `test_engine_cpython.py` | CPython | Engine |
+| `test_engine_esp32.py` | ESP32 | Engine (hardware) |
+| `test_esp32.py` | ESP32 | ProgramLoader (hardware) |
+| `test_tur55_packet.py` | CPython | Packet format |
+| `test_tur55_packet_esp32.py` | ESP32 | Packet format (hardware) |
+| `test_gcm.py` | CPython | GCM (pure Python) |
+| `test_gcm_esp32.py` | ESP32 | GCM (C-module) |
+| `test_hash.py` | CPython | Hashing |
+| `test_rsa_esp32.py` | ESP32 | RSA-OAEP (hardware) |
 
-## Limitations
+---
 
-- MicroPython's limited standard library affects some cryptographic operations
-- Memory constraints on ESP32 limit program complexity
-- No real-time OS features for hard timing guarantees
+## Project Structure
 
-## Recent Security Fixes (v2.0)
 
-This version includes critical security fixes:
+```
+ESP32_Python_FUEL/
+│
+├── main.py                              # Entry point — standard pipeline
+├── program_loader.py                    # Parse + validate TUR55 envelope
+├── execution_engine.py                  # Setup + loop execution
+├── execution_sandbox.py                 # Sandbox (whitelist, timeout, memory)
+├── tur55_packet.py                      # TUR55 packet format (build + parse)
+├── gcm_adapter.py                       # Unified GCM interface
+├── gcm.py                               # Pure Python GCM (CPython fallback)
+├── memory_optimizer.py                  # Memory management
+│
+├── build_packet_cpython.py              # Packet builder (executor side)
+├── build_test_packet_cpython.py         # Test packet builder
+│
+├── test_program_loader.py               # ProgramLoader (CPython)
+├── test_loader_replay.py                # Replay + expires
+├── test_engine_cpython.py               # Engine (CPython)
+├── test_engine_esp32.py                 # Engine (ESP32)
+├── test_esp32.py                        # ProgramLoader (ESP32)
+├── test_tur55_packet.py                 # Packet (CPython)
+├── test_tur55_packet_esp32.py           # Packet (ESP32)
+├── test_gcm.py                          # GCM (CPython)
+├── test_gcm_esp32.py                    # GCM (ESP32)
+├── test_hash.py                         # Hashing
+├── test_rsa_esp32.py                    # RSA-OAEP (ESP32)
+│
+├── tests/                               # Unit tests (pytest-style)
+│   ├── __init__.py
+│   ├── test_execution_engine.py
+│   ├── test_execution_sandbox.py
+│   └── test_memory_optimizer.py
+│
+├── patches/                             # ucryptography patches
+│   └── ucryptography/
+│       ├── des3_stubs.c
+│       ├── micropython.cmake
+│       └── modcryptography.c
+│
+├── programs/                            # Encrypted program files (future)
+│   └── readme.md
+├── data/                                # Decrypted HTML/CSS/JS (future)
+│   └── readme.md
+├── utils/                               # Utilities
+│   └── readme.md
+├── .vscode/                             # VS Code settings
+│   └── settings.json
+│
+├── PROJECT_HISTORY.md                   # 9 sessions
+├── DECISIONS_LOG.md                     # 23 decisions
+├── ERRORS_AND_SOLUTIONS.md              # 28 errors
+├── TODO.md                              # Current plan
+├── TUR55_COMPLIANCE.md                  # Compliance table
+├── CHANGELOG.md                         # Version history
+├── BUILD_GCM_FIRMWARE.md                # Firmware build
+├── FIRMWARE_WITH_UCRYPTOGRAPHY.md       # ucryptography details
+├── ESP32_MicroPython_Architecture_Plan.md
+├── PROJECT_SUMMARY.md                   # (historical)
+├── PROJECT_SUMMARY_RU.md                # (historical)
+├── README.md                            # This file
+├── README_RU.md                         # Russian version
+├── LICENSE.md                           # MIT
+└── .gitignore
+```
 
-- **crypto_manager.py**: Replaced fake AES-GCM with proper AES-CTR + HMAC-SHA256 (Encrypt-then-MAC), added constant-time comparison
-- **lightweight_security.py**: Replaced broken Ed25519 with HMAC-SHA256 signature, removed insecure `_derive_private_from_public()`, added replay protection
-- **execution_sandbox.py**: Removed `__import__` from allowed builtins, implemented SafeImporter with module whitelist, blocked getattr/setattr/delattr
-- **execution_engine.py**: Added thread-based timeout mechanism for interrupting hung code
-- **memory_optimizer.py**: Added pre-execution memory checking and runtime monitoring with RealTimeMemoryMonitor
-- **fast_json_loader.py**: Fixed newline preservation in combine_code_sections, added syntax validation
-- **line_compiler.py**: Implemented safe indent normalization with GCD-based detection, prevents tabs/spaces mixing
-- **main.py**: Replaced broad exception handling with specific exceptions, implemented Logger class with levels
-
-## Future Improvements
-
-- Enhanced memory management algorithms
-- More sophisticated permission systems
-- Additional encryption algorithms support
+**Runtime artifacts (gitignored):**
+- `esp32_private_key.json` — RSA private key of ESP32
+- `executor_pubkey.bin` — secp256k1 pubkey of executor
+- `test_packet_engine.bin` — test packet
 
 ## License
 
-This project is released under the MIT License.
+Released under the **MIT License**.
+
+Based on the **TUR55 Standard** (Trust Unified Regulation), author: NOMOS-H.
+Original specification: https://github.com/Tabintaban/Protocol_TUR55
+
+---
+
+## References
+
+- **TUR55 Standard:** https://github.com/Tabintaban/Protocol_TUR55
+- **MicroPython v1.24.1:** https://github.com/micropython/micropython/releases/tag/v1.24.1
+- **ESP-IDF v5.2.2:** https://github.com/espressif/esp-idf/tree/v5.2.2
+- **NIST SP 800-38D:** https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
+- **mbedTLS GCM:** https://mbed-tls.readthedocs.io/en/latest/kb/how-to/encrypt-with-aes-gcm/
+- **ucryptography:** https://github.com/dmazzella/ucryptography
+- **secp256k1-embedded-ecdh:** https://github.com/MicroPythonOS/secp256k1-embedded-ecdh
+- **embit:** https://github.com/diybitcoinhardware/embit
+
