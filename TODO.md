@@ -200,7 +200,7 @@
 - [ ] `PROJECT_HISTORY.md` — добавить Сессии 7, 8, 9
 - [ ] `DECISIONS_LOG.md` — добавить решения (WDT, таймаут, print)
 - [ ] `ERRORS_AND_SOLUTIONS.md` — добавить ошибки (WDT, stdout, MicroPython)
-- [ ] `NEXT_SESSION.md` — обновить
+- [x] `NEXT_SESSION.md` — удалён (дублировал `TODO.md`)
 - [ ] `BUILD_GCM_FIRMWARE.md` — обновить
 - [ ] `FIRMWARE_WITH_UCRYPTOGRAPHY.md` — обновить
 
