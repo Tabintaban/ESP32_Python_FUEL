@@ -20,10 +20,10 @@
 - [x] Архитектурный план
 - [x] Лицензия MIT
 
-### Криптография (v2.0)
-- [x] `crypto_manager.py` — AES-CTR + HMAC-SHA256
-- [x] `lightweight_security.py` — HMAC-SHA256
-- [x] Constant-time comparison
+### Криптография (v2.0) — УСТАРЕЛО
+- [x] `crypto_manager.py` — AES-CTR + HMAC-SHA256 _(заменён на GCM)_
+- [x] `lightweight_security.py` — HMAC-SHA256 _(заменён на ECDSA)_
+- [x] Constant-time comparison _(в GCM не нужно — тег проверяется атомарно)_
 
 ### Песочница (v2/v3)
 - [x] `execution_sandbox.py` — SafeImporter с whitelist
@@ -116,46 +116,90 @@
   - Первый `load_program` → OK
   - Второй `load_program` → `Command replay detected` ✅
 
+### Шаг 3.9 — Интеграция `execution_engine.py` (Вариант 1+2)
+- [x] `execute_program(program_data)` принимает конверт 3.2
+- [x] Раскладка `execution.functions` + `execution.setup` + `execution.loop_logic`
+- [x] Setup-контекст передаётся в loop (`merged` globals + locals)
+- [x] `hot_swap(new_program)` под конверт 3.2 (`command_id`)
+- [x] Лимиты из пакета применяются к sandbox через `limit_resources()`
+- [x] Восстановление лимитов в `finally`
+- [x] `test_engine_cpython.py` — тест на CPython: **пройден**
+
+### Шаг 3.10 — TUR55 на ESP32 (совместимость с MicroPython)
+- [x] Убран WDT из `execution_sandbox.py` (в MicroPython `deinit` не работает)
+- [x] Кооперативный таймаут через `machine.Timer(-1)` + флаги
+- [x] Убрана подмена `sys.stdout`/`sys.stderr` (в MicroPython их нет)
+- [x] Убран перехват `print` (в MicroPython невозможно через `__builtins__`)
+- [x] `tur55_packet.py` — `except (ImportError, NameError)` для `vars`
+- [x] `execution_sandbox.py` — `getattr(sys, 'stdout', None)` + проверки
+- [x] `execution_engine.py` — `capture_output=False` для setup/loop
+- [x] `test_engine_esp32.py` — тест на ESP32: **пройден**
+  - setup: OK
+  - loop: 5 итераций
+  - без WDT-сбросов
+
+### Шаг 3.11 — `main.py` — стандартный пайплайн
+- [x] Переписан целиком (убрана старая схема: CryptoManager, ObjectFactory, FastJSONLoader, LineBasedCompiler, LightweightSecurity)
+- [x] `Logger` — оставлен (5 уровней)
+- [x] `run_program(path, max_iterations, log_level)` — пайплайн
+- [x] `main()` — с try/except/finally
+- [x] Логи: `command_id`, `device_id`, `permissions`, лимиты
+- [x] Логи: setup success, loop iterations, time, stats
+- [x] `gc.collect()` в finally
+- [x] **Тест на CPython: пройден** (`loop time_ms: 156`)
+- [x] **Тест на ESP32: пройден** (`loop time_ms: 227`)
+- [x] Docstring перечисляет расширения (для Расширенной версии)
+
+### Документация проекта
+- [x] `.gitignore` — обновлён (`__pycache__`, `*.pyc`, `esp32_private_key.*`, `test_packet*.bin`, `executor_pubkey.bin`)
+
 ---
 
 ## Часть 3. Что нужно сделать
 
-### Интеграция (продолжение)
-- [ ] `execution_engine.py` — интеграция с новым `program_loader.py`
-  - Разложить `execution.setup` / `execution.loop_logic` / `execution.functions`
-  - Выполнить через `execution_sandbox.py`
-  - Проверка `expires` в цикле
-- [ ] Заменить SHA-256 на **BLAKE2s** где релевантно (сейчас целостность даёт GCM tag)
-
 ### Ключи (раздел 4)
 - [ ] Хранение ключей в **eFuse** (ESP32) — требование TUR55 тезис 11
-- [ ] Убрать ключи из кода
+- [ ] Убрать `esp32_private_key.json` и `executor_pubkey.bin` из файловой системы
 - [ ] Загрузка ключей при старте
 
-### Сетевой стек (по умолчанию)
+### Сетевой стек
 - [ ] MQTT-клиент (`umqtt.simple`)
 - [ ] HTTP-сервер (опционально)
 - [ ] Приём пакетов по сети
-- [ ] Единый интерфейс приёма (сеть + файл)
+- [ ] Единый интерфейс приёма (сеть + файл) — `run_from_bytes(packet)`
 
 ### Физическая доставка
 - [ ] Чтение `programs/program.enc` из файловой системы
 - [ ] Единый интерфейс с сетевым приёмом
 
-### Песочница
+### Песочница (продолжение)
 - [ ] Убрать `object_factory.py` или обезопасить (`exec()` без песочницы)
 - [ ] Доступ к GPIO только по разрешённым пинам
 
+### `os.dupterm` (опционально)
+- [ ] Захват вывода из скрипта (для логов) через `os.dupterm`
+- [ ] Если не нужно — оставить `print` в консоль
+
+### Расширенный `main.py` (когда появится потребность)
+- [ ] `set_time(current_time)` — для проверки `expires`
+- [ ] `run_from_bytes(packet)` — для сети
+- [ ] `run_batch(paths)` — несколько пакетов
+- [ ] `hot_swap(path)` — замена без перезагрузки
+- [ ] NVS — хранение `used_command_ids` между перезагрузками
+
 ### Тесты
 - [ ] Запустить **все** тесты на реальном ESP32
-- [ ] Тесты для `execution_engine`
+- [ ] Тесты для `execution_engine` (расширить)
 
 ### Документация
 - [ ] README — обновить статус TUR55 (сейчас описывает v2.0 со старой криптографией)
 - [ ] README_RU — обновить
 - [ ] CHANGELOG — записать всё сделанное
 - [ ] `TUR55_COMPLIANCE.md` — таблица соответствия
-- [ ] `PROJECT_HISTORY.md` — добавить Сессии 7, 8
+- [ ] `PROJECT_HISTORY.md` — добавить Сессии 7, 8, 9
+- [ ] `DECISIONS_LOG.md` — добавить решения (WDT, таймаут, print)
+- [ ] `ERRORS_AND_SOLUTIONS.md` — добавить ошибки (WDT, stdout, MicroPython)
+- [ ] `NEXT_SESSION.md` — обновить
 - [ ] `BUILD_GCM_FIRMWARE.md` — обновить
 - [ ] `FIRMWARE_WITH_UCRYPTOGRAPHY.md` — обновить
 
@@ -168,7 +212,7 @@
 
 ## Текущий статус
 
-**Готово:** **~65%** TUR55/Bronze
+**Готово:** **~75%** TUR55/Bronze
 
 | Раздел | Статус |
 |---|---|
@@ -189,10 +233,13 @@
 - ✅ Формат пакета TUR55
 - ✅ Интеграция `program_loader.py` (Заход 1)
 - ✅ Replay protection + expires (Заход 2)
+- ✅ Интеграция `execution_engine.py` (Вариант 1+2)
+- ✅ TUR55 работает на ESP32 (совместимость с MicroPython)
+- ✅ `main.py` — стандартный пайплайн (CPython + ESP32)
 
 **Что осталось:**
-- `execution_engine.py` — интеграция с `program_loader`
 - eFuse для ключей
 - Сетевой стек (MQTT)
-- Физическая доставка
-- Документация
+- Физическая доставка (`programs/program.enc`)
+- Убрать `object_factory.py`
+- Документация (README, README_RU, CHANGELOG, TUR55_COMPLIANCE)
