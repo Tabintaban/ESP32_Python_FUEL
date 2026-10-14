@@ -1,89 +1,177 @@
 # Changelog
 
-All notable changes to the ESP32 Secure Program Execution System will be documented in this file.
+All notable changes to the ESP32_Python_FUEL project will be documented in this file.
 
-## [2.0.0] - 2024-01-XX
+Проект реализует **Execution Layer (Layer 4)** стандарта **TUR55/Bronze** — безопасное выполнение программ на ESP32 через MicroPython.
 
-### Security Fixes (Critical)
+---
 
-#### crypto_manager.py
-- **Replaced fake AES-GCM with proper AES-CTR + HMAC-SHA256 (Encrypt-then-MAC)**
-  - Uses separate encryption_key and hmac_key (both 32 bytes)
-  - Implements constant-time comparison for tag verification (prevents timing attacks)
-  - Unique IV generation for each encryption
-  - Added unit tests for encryption/decryption correctness, tampering detection, IV uniqueness, and timing attack resistance
+## [3.0.0] — 2026-10-14 — TUR55/Bronze
 
-#### lightweight_security.py
-- **Replaced broken Ed25519 with HMAC-SHA256 symmetric signature**
-  - Removed insecure `_derive_private_from_public()` method (critical security flaw)
-  - Signature now requires secret key knowledge
-  - Added nonce/timestamp for replay attack protection
-  - Implemented constant-time comparison for signature verification
-  - Moved getattr, setattr, delattr from safe to unsafe functions
-  - Added unit tests for signature verification, forgery prevention, and replay protection
+**Статус:** ~75% TUR55/Bronze
 
-#### execution_sandbox.py
-- **Removed `__import__` from allowed_builtins (critical security flaw)**
-  - Implemented SafeImporter class with module whitelist
-  - Blocked relative imports above level 0
-  - Added RESTRICTED_GLOBALS dict to block dangerous builtins
-  - Blocked getattr, setattr, delattr (can be used for sandbox bypass)
-  - Added unit tests for import blocking, eval blocking, and allowed module import
+**Главная победа:** пайплайн TUR55 работает end-to-end на ESP32.
 
-#### execution_engine.py
-- **Added thread-based timeout mechanism for interrupting hung code**
-  - Implemented TimeoutExecutionEngine class with _thread support
-  - Configurable timeout for execution limits
-  - Proper resource cleanup after timeout
-  - Fallback to non-threaded execution when _thread unavailable
-  - Added unit tests for timeout on slow code and resource cleanup
+### Added
 
-#### memory_optimizer.py
-- **Added pre-execution memory checking and runtime monitoring**
-  - Implemented RealTimeMemoryMonitor class
-  - check_before_execution() validates memory before code execution
-  - check_during_execution() monitors memory during execution
-  - Auto-trigger gc.collect() near memory limits
-  - Added detailed memory statistics (free, allocated, total)
-  - Added unit tests for memory checking and stats
+#### Криптография (TUR55 раздел 4)
+- **GCM C-модуль** (`~/cmodules/gcm/modgcm.c`) на mbedTLS
+  - `gcm.encrypt(key, iv, pt, aad)` → `(ct, tag)`
+  - `gcm.decrypt(key, iv, ct, tag, aad)` → `pt`
+  - NIST SP 800-38D: **3/3 на ESP32**
+- **ucryptography** — RSA-OAEP, BLAKE2s
+- **secp256k1** (`usecp256k1` из Bitcoin Core) — ECDSA sign/verify
+- **embit** для CPython (совместим с `usecp256k1`)
+- `gcm_adapter.py` — единый интерфейс (ESP32: C-модуль, CPython: `gcm.py`)
 
-#### fast_json_loader.py
-- **Fixed newline preservation in combine_code_sections**
-  - Proper handling of trailing whitespace between sections
-  - Added syntax validation before returning combined code
-  - Preserves code structure while cleaning up
-  - Added unit tests for newline preservation, syntax validation, and trailing whitespace handling
+#### Формат пакета TUR55 (раздел 3.4)
+- `tur55_packet.py` — JWE-inspired binary
+- Структура: `HEADER + PUBKEY + SESSION_KEY + SCRIPT + SIGNATURE`
+- `build_packet()` — для экзекутора
+- `parse_packet()` — для ESP32
+- `build_packet_cpython.py` — генератор пакетов на CPython
 
-#### line_compiler.py
-- **Implemented safe indent normalization**
-  - GCD-based indent size detection (supports 2 and 4 spaces)
-  - Prevents mixing tabs and spaces (raises IndentationError)
-  - Converts tabs to spaces for consistency
-  - Preserves code semantics during normalization
-  - Added unit tests for indent detection, normalization, and tab/space mixing detection
+#### Конверт TUR55 (раздел 3.2)
+- Поля: `tur55_version`, `command_id`, `device_id`, `source`, `execution`, `custom_data`
+- `execution` содержит: `setup`, `loop_logic`, `functions`, `permissions`, `runtime_limit_ms`, `memory_limit_kb`, `expires`
 
-#### main.py
-- **Replaced broad exception handling with specific exceptions**
-  - Implemented Logger class with levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-  - Specific handling for FileNotFoundError, MemoryError, ValueError, OSError
-  - Only use broad Exception for unexpected errors with re-raise
-  - Structured logging throughout the application
+#### `program_loader.py` (Заход 1)
+- Переписан под `tur55_packet.parse_packet()`
+- `load_program(packet_bytes)` — transport-independent вход
+- `load_program_from_file(filepath)` — обёртка
+- Валидация конверта 3.2
+- Загрузка ключей в `__init__()`
+- Кэш по `command_id`
 
-### Testing
-- Added unit tests to all fixed modules (crypto_manager.py, lightweight_security.py, execution_sandbox.py, execution_engine.py, memory_optimizer.py, fast_json_loader.py, line_compiler.py)
-- All tests are compatible with MicroPython
+#### Replay protection + expires (Заход 2, TUR55 раздел 5)
+- `validate_command_id` — FIFO на 100 записей
+- `validate_expires` — опционально (только при `time_synced`)
+- `set_time(current_time)` — API для синхронизации времени
 
-### Documentation
-- Updated README.md with security fix details
-- Created CHANGELOG.md to document changes
+#### `execution_engine.py`
+- `execute_program(program_data)` — принимает конверт 3.2
+- Setup-контекст передаётся в loop (`merged` globals + locals)
+- `hot_swap(new_program)` — под конверт 3.2
+- Лимиты из пакета применяются к sandbox, восстанавливаются в `finally`
 
-## [1.0.0] - Initial Release
+#### `main.py`
+- Стандартный пайплайн (`parse + validate + execute`)
+- `Logger` (5 уровней)
+- `run_program(path, max_iterations, log_level)`
+- Работает на CPython и ESP32
+
+#### Документация
+- `PROJECT_HISTORY.md` — 9 сессий
+- `DECISIONS_LOG.md` — 23 решения
+- `ERRORS_AND_SOLUTIONS.md` — 28 ошибок
+- `TODO.md` — актуальный план
+- `TUR55_COMPLIANCE.md` — таблица соответствия
+
+### Changed
+
+- **`execution_engine.py`** — `execute_program` принимает конверт 3.2 (вместо плоского `{setup, loop_logic}`)
+- **`execution_engine.py`** — setup-контекст через `merged` (CPython и MicroPython различаются)
+- **`execution_engine.py`** — лимиты из пакета (TUR55 требует соблюдения)
+- **`execution_sandbox.py`** — WDT убран (неостановим в MicroPython)
+- **`execution_sandbox.py`** — кооперативный таймаут через `machine.Timer(-1)`
+- **`execution_sandbox.py`** — `sys.stdout` / `print` не перехватываются
+- **`tur55_packet.py`** — embit для CPython (`_ecdsa_sign`, `_ecdsa_verify`)
+- **`main.py`** — переписан целиком под TUR55
+- **`.gitignore`** — обновлён (`__pycache__`, `*.pyc`, `esp32_private_key.*`)
+
+### Removed (мёртвый код v2.0, 18 файлов, ~130 KB, ~2900 строк)
+
+#### v2.0 криптография
+- `crypto_manager.py` — AES-CTR + HMAC (заменён на GCM)
+- `lightweight_security.py` — HMAC (заменён на ECDSA)
+
+#### v2.0 JSON
+- `fast_json_loader.py` — заменён на `program_loader`
+
+#### v2.0 тесты/бенчмарки
+- `performance_tests.py`, `run_tests.py`
+- `tests/test_crypto_manager.py`, `tests/test_lightweight_security.py`
+
+#### v2.0 дыры
+- `object_factory.py` — `exec()` без песочницы
+
+#### Дубли GCM
+- `gcm_esp32.py` — заменён на `gcm_adapter`
+
+#### Устаревшее
+- `line_compiler.py`, `decrypt_packet_esp32.py`, `bench_gcm.py`, `test_ed25519_size.py`
+
+#### Документация
+- `NEXT_SESSION.md` — дублировал `TODO.md`
+
+### Fixed (совместимость с MicroPython)
+
+- `vars()` isn't defined → `except (ImportError, NameError)`
+- `__builtins__` isn't defined → `try/except NameError` + `globals()` fallback
+- `TimeoutError` isn't defined → заменён на `RuntimeError`
+- `'module' object has no attribute 'stdout'` → убрана подмена `sys.stdout`
+- `print` не перехватывается через `__builtins__` → отказались от перехвата
+- WDT-сбросы после теста → WDT убран, кооперативный таймаут
+- Boot loop (`RTCWDT_RTC_RESET`) → заливка трёх файлов по трём адресам
+
+### Tests
+
+- `test_program_loader.py` — ProgramLoader (CPython)
+- `test_loader_replay.py` — replay + expires
+- `test_engine_cpython.py` — engine (CPython)
+- `test_engine_esp32.py` — engine (ESP32)
+- `test_esp32.py` — ProgramLoader (ESP32)
+- `test_tur55_packet.py`, `test_tur55_packet_esp32.py`
+- `test_gcm.py`, `test_gcm_esp32.py`, `test_hash.py`, `test_rsa_esp32.py`
+
+### Известные ограничения
+
+- **eFuse** — не реализован (раздел 4 TUR55)
+- **Кооперативный таймаут** — не прерывает зависший C-код (hard-guarantee отсутствует)
+- **`used_command_ids` в RAM** — теряется при перезагрузке (нужен NVS)
+- **`expires` не проверяется** — нет источника времени (NTP/MQTT)
+- **MQTT / сетевой стек** — не реализованы
+- **Физическая доставка** (`programs/program.enc`) — не реализована
+- **`os.dupterm`** — не используется (нет перехвата `print`)
+
+---
+
+## [2.0.0] — 2026-07-12 — Устранение уязвимостей (УСТАРЕЛО)
+
+> **Примечание:** Эта версия полностью заменена на v3.0.0 (TUR55/Bronze).
+> Файлы, описанные здесь, **удалены** из проекта.
+
+### Security Fixes
+
+- **`crypto_manager.py`** — заменён на AES-CTR + HMAC-SHA256 (позже заменён на GCM)
+- **`lightweight_security.py`** — заменён на HMAC-SHA256 (позже заменён на ECDSA)
+- **`execution_sandbox.py`** — SafeImporter с whitelist модулей
+- **`execution_engine.py`** — таймаут через `_thread`
+- **`memory_optimizer.py`** — pre/during/after checks
+- **`fast_json_loader.py`** — сохранение newline
+- **`line_compiler.py`** — безопасная нормализация отступов
+- **`main.py`** — `Logger` с уровнями
+
+---
+
+## [1.0.0] — 2026-01-23 — Initial Release
 
 ### Features
-- AES-GCM encryption for JSON files
-- Ed25519-like signature verification
-- Isolated execution in sandbox
-- Fast JSON loading and compilation
-- Memory optimization for ESP32
-- Hot-reload support
-- Performance benchmarks (< 500ms load to execution)
+
+- AES-GCM шифрование JSON-файлов
+- Проверка подписей
+- Изолированное выполнение в песочнице
+- Быстрая загрузка JSON
+- Оптимизация памяти для ESP32
+- Hot-reload
+- Бенчмарки (< 500 мс)
+
+---
+
+## Ссылки
+
+- **TUR55 Standard:** https://github.com/Tabintaban/Protocol_TUR55
+- **ESP32_Python_FUEL:** https://github.com/Tabintaban/ESP32_Python_FUEL
+- **MicroPython v1.24.1:** https://github.com/micropython/micropython/releases/tag/v1.24.1
+- **ESP-IDF v5.2.2:** https://github.com/espressif/esp-idf/tree/v5.2.2
+- **NIST SP 800-38D:** https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
