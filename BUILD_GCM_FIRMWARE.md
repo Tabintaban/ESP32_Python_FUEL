@@ -1,10 +1,10 @@
-BUILD_GCM_FIRMWARE.md
+# Сборка MicroPython с C-модулями для ESP32-WROOM
 
-
-# Сборка MicroPython с GCM для ESP32-WROOM
-
-**Проверено:** 2026-10-12  
+**Проверено:** 2026-10-14
 **Результат:** ✅ Работает
+**Цель:** собрать MicroPython с GCM, ucryptography и secp256k1 для TUR55/Bronze.
+
+---
 
 ## Ключевые версии
 
@@ -16,6 +16,8 @@ BUILD_GCM_FIRMWARE.md
 | Python (WSL) | 3.10.12 | Требование ESP-IDF |
 
 **Важно:** ESP-IDF **v5.1.2** и **v5.3.2** — **НЕ подходят**. v5.1.2 не в списке поддерживаемых, v5.3.2 требует MicroPython main (v1.30-preview), который не загружается на ESP32-WROOM.
+
+---
 
 ## Что нужно установить
 
@@ -47,18 +49,34 @@ git submodule update --init --recursive
 make -C mpy-cross
 ```
 
-## GCM-модуль
+---
 
-### Структура
+## Что собираем
+
+**Три C-модуля:**
+
+| Модуль | Что даёт | Источник |
+|---|---|---|
+| `gcm` | AES-256-GCM (TUR55 раздел 4) | Свой (`modgcm.c`) |
+| `cryptography` | RSA-OAEP, BLAKE2s, ECDSA | `ucryptography` |
+| `usecp256k1` | ECDSA secp256k1 (TUR55 раздел 4) | `secp256k1-embedded-ecdh` |
+
+**Плюс заглушки** `des3_stubs.c` для обхода отсутствующего DES.
+
+**Структура `~/cmodules/`:**
 
 ```
 ~/cmodules/
-├── micropython.cmake      ← главный
+├── micropython.cmake      ← главный, включает все модули
 ├── des3_stubs.c           ← заглушки 3DES
 └── gcm/
     ├── modgcm.c
     └── micropython.cmake
 ```
+
+---
+
+## GCM-модуль
 
 ### `~/cmodules/gcm/micropython.cmake`
 
@@ -184,6 +202,8 @@ const mp_obj_module_t gcm_module = {
 MP_REGISTER_MODULE(MP_QSTR_gcm, gcm_module);
 ```
 
+---
+
 ## ucryptography — для RSA-OAEP, BLAKE2s
 
 ### Клонировать
@@ -209,6 +229,8 @@ static void mp_obj_int_to_bytes(mp_obj_t obj, size_t len, byte *buf,
 }
 ```
 
+---
+
 ## secp256k1 (Bitcoin Core) — для TUR55
 
 ### Клонировать
@@ -232,7 +254,9 @@ grep MODULE_SECP256K1 ~/esp/secp256k1-embedded-ecdh/micropython.cmake
 sed -i 's/    -DHAVE_CONFIG_H/    -DHAVE_CONFIG_H\n    -DMODULE_SECP256K1_ENABLED=1/' ~/esp/secp256k1-embedded-ecdh/micropython.cmake
 ```
 
-### Заглушки 3DES
+---
+
+## Заглушки 3DES
 
 **Файл** `~/cmodules/des3_stubs.c`:
 
@@ -247,7 +271,9 @@ int mbedtls_des3_crypt_ecb(mbedtls_des3_context *ctx, const unsigned char input[
 int mbedtls_des3_crypt_cbc(mbedtls_des3_context *ctx, int mode, size_t length, unsigned char iv[8], const unsigned char *input, unsigned char *output) { return -1; }
 ```
 
-### Главный `~/cmodules/micropython.cmake`
+---
+
+## Главный `~/cmodules/micropython.cmake`
 
 ```cmake
 # Главный micropython.cmake — включает все пользовательские C-модули
@@ -268,6 +294,8 @@ target_sources(des3_stubs INTERFACE
 )
 target_link_libraries(usermod INTERFACE des3_stubs)
 ```
+
+---
 
 ## Сборка прошивки
 
@@ -302,6 +330,8 @@ ls -la build-ESP32_GENERIC/bootloader/bootloader.bin
 ls -la build-ESP32_GENERIC/partition_table/partition-table.bin
 ls -la build-ESP32_GENERIC/micropython.bin
 ```
+
+---
 
 ## Заливка на ESP32
 
@@ -350,6 +380,8 @@ Writing 'partition-table.bin' at 0x00008000... Hash of data verified.
 Writing 'micropython.bin' at 0x00010000... Hash of data verified.
 ```
 
+---
+
 ## Проверка
 
 ```powershell
@@ -363,7 +395,8 @@ Type "help()" for more information.
 >>> 
 ```
 
-**Проверить GCM:**
+### 1. GCM
+
 ```python
 import gcm
 key = bytes(32); iv = bytes(12); pt = b'hello'; aad = b''
@@ -374,7 +407,8 @@ print(pt2)
 
 **Ожидаемо:** `b'hello'`
 
-**Проверить secp256k1:**
+### 2. secp256k1
+
 ```python
 import usecp256k1
 import hashlib
@@ -392,7 +426,8 @@ print('secp256k1 verify:', ok)
 
 **Ожидаемо:** `secp256k1 verify: True`
 
-**Проверить RSA-OAEP:**
+### 3. RSA-OAEP
+
 ```python
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes
@@ -407,7 +442,56 @@ print('RSA-OAEP:', pt)
 
 **Ожидаемо:** `RSA-OAEP: b'secret'`
 
+### 4. Модули TUR55
+
+```python
+import tur55_packet
+import program_loader
+import execution_engine
+import execution_sandbox
+import gcm_adapter
+import main
+print('TUR55 modules: OK')
+```
+
+**Ожидаемо:** `TUR55 modules: OK`
+
+### 5. Пайплайн TUR55 (финальная проверка)
+
+**Перед этим залить на ESP32:**
+- `test_packet_engine.bin`
+- `esp32_private_key.json`
+- `executor_pubkey.bin`
+
+**Запустить:**
+
+```python
+import test_engine_esp32
+```
+
+**Ожидаемо:**
+```
+========================================
+engine test (ESP32)
+========================================
+1. ProgramLoader...          OK
+2. Loading test_packet_engine.bin...  862 bytes
+3. load_program...           command_id: 0xtest_engine_001
+4. ExecutionEngine...        OK
+5. execute_program...
+setup done, x = 42
+loop iter 0 x = 42
+...
+[INFO] setup success:    True
+[INFO] loop iterations:  5
+========================================
+DONE
+========================================
+```
+
 **Выйти:** `Ctrl+]`.
+
+---
 
 ## Частые проблемы
 
@@ -460,6 +544,26 @@ cd ~/esp/esp-idf-v5.2.2
 
 **Решение:** `import usecp256k1`, не `secp256k1`.
 
+### `NameError: name 'vars' isn't defined`
+
+**Причина:** в MicroPython нет `vars()` и модуля `builtins`.
+
+**Решение:** в `execution_sandbox.py` — `except (ImportError, NameError)` + fallback на `globals()`.
+
+### `'module' object has no attribute 'stdout'`
+
+**Причина:** в MicroPython нет `sys.stdout`.
+
+**Решение:** не перехватывать `sys.stdout` (см. `ERRORS_AND_SOLUTIONS.md`, ошибка 23).
+
+### WDT-сбросы после теста
+
+**Причина:** `machine.WDT` неостановим в MicroPython.
+
+**Решение:** WDT убран, кооперативный таймаут через `machine.Timer` (см. `ERRORS_AND_SOLUTIONS.md`, ошибка 25).
+
+---
+
 ## Что можно удалить после успеха
 
 Если v5.2.2 работает — **лишние версии ESP-IDF не нужны**:
@@ -471,6 +575,8 @@ rm -rf ~/esp/esp-idf-v5.3.2   # v5.3.2
 
 **Оставить:** только `~/esp/esp-idf-v5.2.2`.
 
+---
+
 ## Ссылки
 
 - MicroPython ESP32 port: https://github.com/micropython/micropython/tree/master/ports/esp32
@@ -479,15 +585,33 @@ rm -rf ~/esp/esp-idf-v5.3.2   # v5.3.2
 - mbedTLS GCM API: https://mbed-tls.readthedocs.io/en/latest/kb/how-to/encrypt-with-aes-gcm/
 - ucryptography: https://github.com/dmazzella/ucryptography
 - secp256k1-embedded-ecdh: https://github.com/MicroPythonOS/secp256k1-embedded-ecdh
+- **ERRORS_AND_SOLUTIONS.md** — база ошибок (28 штук)
+- **TUR55_COMPLIANCE.md** — таблица соответствия
 ```
 
-## Что делать
+## Что изменилось
 
-**1.** Открой `BUILD_GCM_FIRMWARE.md`.
-**2.** `Ctrl+A` → `Delete`.
-**3.** Вставь **этот полный текст**.
-**4.** **Сохрани** (`Ctrl+S`).
+**Добавлено:**
+- **«Что собираем»** — таблица трёх C-модулей
+- **Проверка TUR55-модулей** (шаг 4)
+- **Пайплайн TUR55** (шаг 5) — `test_engine_esp32`
+- **Три новые ошибки** в «Частые проблемы»:
+  - `vars` isn't defined
+  - `'module' object has no attribute 'stdout'`
+  - WDT-сбросы
+- **Ссылки** на `ERRORS_AND_SOLUTIONS.md`, `TUR55_COMPLIANCE.md`
 
-**Скажи «готово»** — закоммитим.
+**Убрано:**
+- Служебный текст в конце («## Что делать», «Скажи "готово"», «Жду»)
 
-**Жду.**
+**Обновлено:**
+- Дата: 2026-10-12 → **2026-10-14**
+- Заголовок: «Сборка MicroPython с GCM» → **«Сборка MicroPython с C-модулями»**
+- Цель: добавлено **«для TUR55/Bronze»**
+
+**Оставлено:**
+- Все инструкции по сборке (без изменений)
+- Структура `~/cmodules/`
+- Код `modgcm.c`, `des3_stubs.c`, `micropython.cmake`
+- Заливка (три файла)
+- Частые проблемы
