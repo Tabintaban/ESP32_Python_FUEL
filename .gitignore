@@ -23,3 +23,6 @@ test_packet_engine.bin
 
 # Secrets (личные настройки)
 secrets.py
+
+# TUR55 packages (offline delivery)
+programs/*.enc

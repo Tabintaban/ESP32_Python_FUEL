@@ -58,14 +58,40 @@ class Logger:
     def critical(self, message):
         self.log('CRITICAL', message)
 
+def _find_packet():
+    """
+    Ищет пакет TUR55.
 
-def run_program(packet_path, max_iterations=5, log_level="INFO",
+    Порядок (TUR55 тезис 8, Transport Freedom):
+      1. programs/program.enc   — офлайн-доставка (флешка, USB)
+      2. test_packet_engine.bin — для тестов
+
+    Returns:
+        str — путь к пакету, или None если не найдено
+    """
+    candidates = [
+        "programs/program.enc",
+        "test_packet_engine.bin",
+    ]
+    for path in candidates:
+        try:
+            with open(path, 'rb') as f:
+                f.read(1)
+            return path
+        except OSError:
+            continue
+    return None
+
+
+
+def run_program(packet_path=None, max_iterations=5, log_level="INFO",
                 wifi_ssid=None, wifi_password=None):
     """
     Основной пайплайн TUR55: загрузка пакета -> валидация -> выполнение.
 
     Args:
-        packet_path: str — путь к файлу пакета TUR55
+        packet_path: str | None — путь к файлу пакета TUR55
+            (если None — ищет programs/program.enc, потом test_packet_engine.bin)
         max_iterations: int — лимит итераций loop
         log_level: str — уровень логирования
         wifi_ssid: str | None — SSID Wi-Fi (для NTP-синхронизации времени)
@@ -77,12 +103,27 @@ def run_program(packet_path, max_iterations=5, log_level="INFO",
     logger = Logger(level=log_level)
     logger.info("=== TUR55 Pipeline ===")
 
+    # 0. Поиск пакета, если путь не задан
+    if packet_path is None:
+        packet_path = _find_packet()
+        if packet_path is None:
+            logger.error("No packet found (programs/program.enc, test_packet_engine.bin)")
+            return {'success': False, 'error': 'No packet found'}
+        logger.info("Auto-found packet: %s" % packet_path)
+
        # 1. ProgramLoader — ключи + parse + validate
     logger.info("Init ProgramLoader...")
     loader = ProgramLoader()
 
     # 1.5. NTP-синхронизация времени (опционально)
-    if wifi_ssid and wifi_password:
+    # NTP доступен только на ESP32 (нужны network + ntptime)
+    try:
+        import network  # noqa: F401
+        has_network = True
+    except ImportError:
+        has_network = False
+
+    if wifi_ssid and wifi_password and has_network:
         logger.info("Syncing time via NTP...")
         try:
             from time_sync import sync_time
@@ -94,6 +135,8 @@ def run_program(packet_path, max_iterations=5, log_level="INFO",
                 logger.warning("NTP sync failed — expires not checked")
         except Exception as e:
             logger.warning("NTP sync error: %s" % e)
+    elif not has_network:
+        logger.info("NTP skipped (no network module — CPython)")
     else:
         logger.info("NTP skipped (no Wi-Fi credentials)")
 
@@ -154,7 +197,7 @@ def main():
         pass  # secrets.py нет — работаем без NTP
 
     try:
-        run_program("test_packet_engine.bin", max_iterations=5,
+        run_program(max_iterations=5,
                     wifi_ssid=wifi_ssid, wifi_password=wifi_password)
 
     except MemoryError as e:
