@@ -82,7 +82,7 @@ def main():
     import time as _time
 
     # expires = сейчас + 1 час (для теста — точно в будущем)
-    expires_ts = int(_time.time()) - 3600
+    expires_ts = int(_time.time()) + 3600
 
     json_data = {
         "tur55_version": "1.0",

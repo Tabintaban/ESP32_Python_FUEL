@@ -59,7 +59,8 @@ class Logger:
         self.log('CRITICAL', message)
 
 
-def run_program(packet_path, max_iterations=5, log_level="INFO"):
+def run_program(packet_path, max_iterations=5, log_level="INFO",
+                wifi_ssid=None, wifi_password=None):
     """
     Основной пайплайн TUR55: загрузка пакета -> валидация -> выполнение.
 
@@ -67,6 +68,8 @@ def run_program(packet_path, max_iterations=5, log_level="INFO"):
         packet_path: str — путь к файлу пакета TUR55
         max_iterations: int — лимит итераций loop
         log_level: str — уровень логирования
+        wifi_ssid: str | None — SSID Wi-Fi (для NTP-синхронизации времени)
+        wifi_password: str | None — пароль Wi-Fi
 
     Returns:
         dict — {'success': ..., 'setup_result': ..., 'loop_result': ...}
@@ -74,13 +77,29 @@ def run_program(packet_path, max_iterations=5, log_level="INFO"):
     logger = Logger(level=log_level)
     logger.info("=== TUR55 Pipeline ===")
 
-    # 1. ProgramLoader — ключи + parse + validate
+       # 1. ProgramLoader — ключи + parse + validate
     logger.info("Init ProgramLoader...")
     loader = ProgramLoader()
 
+    # 1.5. NTP-синхронизация времени (опционально)
+    if wifi_ssid and wifi_password:
+        logger.info("Syncing time via NTP...")
+        try:
+            from time_sync import sync_time
+            ts = sync_time(wifi_ssid, wifi_password)
+            if ts:
+                loader.set_time(ts)
+                logger.info("Time synced: %d" % ts)
+            else:
+                logger.warning("NTP sync failed — expires not checked")
+        except Exception as e:
+            logger.warning("NTP sync error: %s" % e)
+    else:
+        logger.info("NTP skipped (no Wi-Fi credentials)")
+
     # 2. ExecutionEngine — sandbox + setup/loop
     logger.info("Init ExecutionEngine...")
-    engine = ExecutionEngine()
+    engine = ExecutionEngine() 
 
     # 3. Загрузка и валидация пакета
     logger.info("Loading packet: %s" % packet_path)
@@ -121,9 +140,22 @@ def run_program(packet_path, max_iterations=5, log_level="INFO"):
 def main():
     """
     Стандартный вход: выполнить test_packet_engine.bin.
+
+    Если есть secrets.py — использует Wi-Fi для NTP-синхронизации.
     """
+    # Опционально: Wi-Fi из secrets.py
+    wifi_ssid = None
+    wifi_password = None
     try:
-        run_program("test_packet_engine.bin", max_iterations=5)
+        from secrets import WIFI_SSID, WIFI_PASSWORD
+        wifi_ssid = WIFI_SSID
+        wifi_password = WIFI_PASSWORD
+    except ImportError:
+        pass  # secrets.py нет — работаем без NTP
+
+    try:
+        run_program("test_packet_engine.bin", max_iterations=5,
+                    wifi_ssid=wifi_ssid, wifi_password=wifi_password)
 
     except MemoryError as e:
         print("[CRITICAL] Out of memory: %s" % e)
