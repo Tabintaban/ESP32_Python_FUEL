@@ -6,6 +6,45 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.1.0] — 2026-10-15 — NVS для `used_command_ids`
+
+**Статус:** ~78% TUR55/Bronze
+
+### Added
+
+- **NVS-хранилище** для `used_command_ids`
+  - `program_loader._load_used_command_ids()` — загрузка из NVS при старте
+  - `program_loader._save_used_command_ids()` — сохранение при новом `command_id`
+  - Namespace: `tur55_replay`
+  - Ключ: `used_ids` (JSON-список)
+  - `nvs.commit()` — обязательно для сохранения
+
+### Changed
+
+- **`program_loader.validate_command_id()`** — вызывает `_save_used_command_ids()`
+- **Раздел 5 TUR55** — replay protection **полностью закрыт** (RAM → NVS)
+- **Статус:** ~75% → **~78%**
+
+### Fixed
+
+- **Replay protection переживает перезагрузку** — раньше `used_command_ids` терялись при Ctrl+D
+- **Fallback на RAM** — CPython работает как раньше
+
+### Проверено на ESP32
+
+- Первый запуск → OK
+- Второй запуск → `Command replay detected` (RAM)
+- Ctrl+D → `Command replay detected` (NVS)
+
+### Коммиты
+
+- `bc9f29c` — program_loader: NVS
+- `5e2a5c2` — TODO + TUR55_COMPLIANCE: NVS (~78%)
+- `b67321b` — PROJECT_HISTORY: Сессия 10
+- `74a1473` — DECISIONS_LOG: Решение 24
+
+---
+
 ## [3.0.0] — 2026-10-14 — TUR55/Bronze
 
 **Статус:** ~75% TUR55/Bronze
@@ -128,7 +167,7 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 - **eFuse** — не реализован (раздел 4 TUR55)
 - **Кооперативный таймаут** — не прерывает зависший C-код (hard-guarantee отсутствует)
-- **`used_command_ids` в RAM** — теряется при перезагрузке (нужен NVS)
+- **`used_command_ids` в RAM** — теряется при перезагрузке (**исправлено в v3.1.0**)
 - **`expires` не проверяется** — нет источника времени (NTP/MQTT)
 - **MQTT / сетевой стек** — не реализованы
 - **Физическая доставка** (`programs/program.enc`) — не реализована
