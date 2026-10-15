@@ -332,6 +332,42 @@
 
 ---
 
+## Сессия 10 (2026-10-15) — NVS для `used_command_ids`
+
+### Что делали
+- Перенос `used_command_ids` из RAM в NVS
+- Replay protection теперь переживает перезагрузку
+- Обновление документации (TODO, TUR55_COMPLIANCE)
+
+### Результаты
+- ✅ **NVS работает** — `used_command_ids` сохраняются между Ctrl+D
+- ✅ Fallback на RAM (CPython — NVS недоступен)
+- ✅ `program_loader.py` — `_load_used_command_ids()` + `_save_used_command_ids()`
+- ✅ **Раздел 5 TUR55 полностью закрыт** (replay + NVS)
+- ✅ Статус: ~78% TUR55/Bronze
+
+### Ошибки
+- **NVS не пуст при первом запуске** — от прошлых тестов
+  - **Решение:** `nvs.erase_key("used_ids")` + `nvs.commit()`
+- **ESP32 вошёл в download mode** после кнопки EN (зажат BOOT)
+  - **Решение:** EN без BOOT
+
+### Ключевые решения
+- **NVS namespace:** `tur55_replay`
+- **Ключ:** `used_ids` (JSON-список)
+- **Fallback:** `try: from esp32 import NVS / except ImportError: return`
+- **`nvs.commit()` обязателен** — без него изменения не сохраняются
+
+### Коммиты
+- `bc9f29c` — program_loader: NVS
+- `fb05eec` — TUR55_COMPLIANCE: NVS (старая версия)
+- `5e2a5c2` — TODO + TUR55_COMPLIANCE: NVS (~78%)
+- `f2c1855` — PROJECT_HISTORY: шапка (~78%)
+
+---
+
+
+
 ## Общая хронология ключевых решений
 
 | Дата | Решение | Почему |
@@ -357,6 +393,7 @@
 | 2026-10-14 | `sys.stdout` / `print` не перехватываются | Невозможно в MicroPython |
 | 2026-10-14 | main.py — стандартный пайплайн | Одна точка входа |
 | 2026-10-14 | Удалить мёртвый код v2.0 | Чистота проекта |
+| 2026-10-15 | NVS для `used_command_ids` | Replay переживает перезагрузку |
 
 ---
 
@@ -372,7 +409,8 @@
 | 4 — RSA-OAEP | ✅ Работает |
 | 4 — BLAKE2s | ✅ Работает |
 | 4 — eFuse | ❌ |
-| 5 — expires / command_id | ✅ **ЗАКРЫТО** |
+| 5 — command_id (NVS) | ✅ **ЗАКРЫТО** |
+| 5 — expires | ⏳ опционально |
 | 6 — whitelist / таймаут / память | ✅ |
 
 **Что сделано:**
@@ -391,6 +429,6 @@
 **Что осталось:**
 1. **eFuse** для ключей (раздел 4 TUR55)
 2. **MQTT** — сетевой слой
-3. **Физическая доставка** — `programs/program.enc`
-4. **Документация** — README, CHANGELOG, TUR55_COMPLIANCE
-5. **Расширения `main.py`** — `set_time`, `run_from_bytes`, `run_batch`, `hot_swap`
+3. **Источник времени** для `expires` (NTP/MQTT)
+4. **Физическая доставка** — `programs/program.enc`
+5. **Документация** — 3 файла (PROJECT_HISTORY, DECISIONS_LOG, CHANGELOG)
