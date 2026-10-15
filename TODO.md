@@ -114,6 +114,7 @@
 - [x] `validate_command_id` — replay protection (FIFO, 100 записей)
 - [x] `set_time(current_time)` — API для синхронизации времени
 - [x] `used_command_ids` + `used_command_ids_set`
+- [x] NVS — сохранение между перезагрузками (Шаг 3.12)
 - [x] `test_loader_replay.py` — тест на CPython: **пройден**
 - [x] `test_esp32.py` — тест на ESP32: **пройден**
   - Первый `load_program` → OK
@@ -153,6 +154,14 @@
 - [x] **Тест на ESP32: пройден** (`loop time_ms: 227`)
 - [x] Docstring перечисляет расширения (для Расширенной версии)
 
+### Шаг 3.12 — NVS для `used_command_ids`
+- [x] `_load_used_command_ids()` — загрузка из NVS при старте
+- [x] `_save_used_command_ids()` — сохранение в NVS при новом `command_id`
+- [x] Fallback на RAM (CPython — NVS недоступен)
+- [x] Проверка на ESP32: replay переживает Ctrl+D
+- [x] Тест на CPython: работает как раньше
+
+
 ### Документация проекта
 - [x] `.gitignore` — обновлён (`__pycache__`, `*.pyc`, `esp32_private_key.*`, `test_packet*.bin`, `executor_pubkey.bin`)
 
@@ -188,7 +197,7 @@
 - [ ] `run_from_bytes(packet)` — для сети
 - [ ] `run_batch(paths)` — несколько пакетов
 - [ ] `hot_swap(path)` — замена без перезагрузки
-- [ ] NVS — хранение `used_command_ids` между перезагрузками
+- [x] NVS — хранение `used_command_ids` между перезагрузками
 
 ### Тесты
 - [ ] Запустить **все** тесты на реальном ESP32
@@ -215,7 +224,7 @@
 
 ## Текущий статус
 
-**Готово:** **~75%** TUR55/Bronze
+**Готово:** **~78%** TUR55/Bronze
 
 | Раздел | Статус |
 |---|---|
@@ -225,7 +234,8 @@
 | **Раздел 4** — RSA-OAEP | ✅ Работает |
 | **Раздел 4** — BLAKE2s | ✅ Работает |
 | **Раздел 4** — eFuse | ❌ |
-| **Раздел 5** — expires / command_id | ✅ **ЗАКРЫТО** |
+| **Раздел 5** — command_id (NVS) | ✅ **ЗАКРЫТО** |
+| **Раздел 5** — expires | ⏳ опционально (нет источника времени) |
 | **Раздел 6** — whitelist / таймаут / память | ✅ |
 
 **Что сделано:**
@@ -239,10 +249,11 @@
 - ✅ Интеграция `execution_engine.py` (Вариант 1+2)
 - ✅ TUR55 работает на ESP32 (совместимость с MicroPython)
 - ✅ `main.py` — стандартный пайплайн (CPython + ESP32)
+- ✅ NVS — `used_command_ids` переживает перезагрузку
 
 **Что осталось:**
 - eFuse для ключей
+- Источник времени для `expires` (NTP/MQTT)
 - Сетевой стек (MQTT)
 - Физическая доставка (`programs/program.enc`)
-- Убрать `object_factory.py`
 - Документация (README, README_RU, CHANGELOG, TUR55_COMPLIANCE)
