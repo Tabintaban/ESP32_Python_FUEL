@@ -39,7 +39,8 @@ def _wifi_connect(ssid, password, timeout=15):
     return True
 
 
-def sync_time(ssid, password, host="pool.ntp.org", timeout=15):
+def sync_time(ssid, password, host="pool.ntp.org", timeout=15,
+              retries=3, retry_delay=2):
     """
     Синхронизирует время ESP32 через NTP.
 
@@ -48,6 +49,8 @@ def sync_time(ssid, password, host="pool.ntp.org", timeout=15):
         password: str — пароль
         host: str — NTP-сервер (по умолчанию pool.ntp.org)
         timeout: int — таймаут подключения к Wi-Fi
+        retries: int — число попыток NTP
+        retry_delay: int — пауза между попытками (сек)
 
     Returns:
         int — Unix timestamp, или None если ошибка
@@ -56,20 +59,26 @@ def sync_time(ssid, password, host="pool.ntp.org", timeout=15):
     if not _wifi_connect(ssid, password, timeout):
         return None
 
-    # 2. NTP
-    try:
-        ntptime.host = host
-        ntptime.settime()
-    except Exception as e:
-        print("NTP sync failed: %s" % e)
+    # 2. NTP с retry
+    ntptime.host = host
+    synced = False
+
+    for attempt in range(retries):
+        try:
+            ntptime.settime()
+            synced = True
+            break
+        except Exception as e:
+            print("NTP attempt %d/%d failed: %s" % (attempt + 1, retries, e))
+            if attempt < retries - 1:
+                time.sleep(retry_delay)
+
+    if not synced:
+        print("NTP sync failed after %d attempts" % retries)
         return None
 
     # 3. Читаем время
     # ntptime.settime() устанавливает RTC в UTC.
-    # time.time() возвращает Unix timestamp (с 2000-01-01 для MicroPython).
-    # Для Unix epoch нужен offset — но для сравнения expires достаточно
-    # использовать одно и то же смещение.
-
     # В MicroPython: time.time() возвращает секунды с 2000-01-01
     # Unix timestamp (с 1970-01-01) = time.time() + 946684800
     EPOCH_OFFSET = 946684800  # 2000-01-01 в Unix
