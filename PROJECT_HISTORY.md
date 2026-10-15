@@ -376,6 +376,7 @@
 - **NTP** — синхронизация времени для проверки `expires`
 - **`main.py`** — интеграция NTP (опционально)
 - **`secrets.py`** — Wi-Fi настройки (в `.gitignore`)
+- **Физическая доставка** — `programs/program.enc` (офлайн-доставка)
 
 ### Результаты
 
@@ -404,6 +405,14 @@
 - ✅ На CPython — `NTP skipped` (нет `time_sync`)
 - ✅ На ESP32 — `Time synced: ...`
 - ✅ `secrets.py` — в `.gitignore`
+- ✅ `has_network` — проверка (NTP только на ESP32)
+
+**Физическая доставка:**
+- ✅ `programs/program.enc` — офлайн-доставка (флешка / USB)
+- ✅ `main._find_packet()` — ищет `programs/program.enc`, потом `test_packet_engine.bin`
+- ✅ `programs/*.enc` — в `.gitignore`
+- ✅ `programs/readme.md` — обновлён (назначение папки)
+- ✅ **Проверено на ESP32:** пайплайн из `programs/program.enc` работает
 
 ### Ошибки
 - **`OSError: -202`** при `mip install` на ESP32
@@ -428,6 +437,8 @@
 - **`secrets.py`** — Wi-Fi отдельно от кода (в `.gitignore`)
 - **NTP — опционален:** без Wi-Fi `expires` не проверяется, но replay работает
 - **`main.py`** — fallback: если `secrets.py` нет, работает без NTP
+- **Физическая доставка:** `programs/program.enc` — приоритет над `test_packet_engine.bin`
+- **`programs/*.enc`** — не коммитить (пакет секретный)
 
 ### Коммиты
 - `07f1739` — MQTT: mqtt_client + mqtt_publisher
@@ -436,6 +447,8 @@
 - `6c2c910` — NTP: time_sync.py + expires в build_test_packet
 - `afabe77` — main.py: NTP-интеграция
 - `cf8c83f` — README_RU: форматирование markdown
+- `19e62fc` — time_sync: retry (3 попытки)
+- `888717b` — Физическая доставка: programs/program.enc
 
 ---
 
@@ -469,6 +482,8 @@
 | 2026-10-15 | NTP + `expires` | Раздел 5 TUR55 — полностью закрыт |
 | 2026-10-15 | `main.py` + NTP | Опциональная синхронизация |
 | 2026-10-15 | `secrets.py` в `.gitignore` | Wi-Fi отдельно от кода |
+| 2026-10-15 | Retry в `time_sync` | NTP надёжнее |
+| 2026-10-15 | Физическая доставка (`programs/`) | TUR55 тезис 8 — офлайн |
 
 ---
 
