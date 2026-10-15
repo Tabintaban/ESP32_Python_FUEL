@@ -6,6 +6,44 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.2.1] — 2026-10-16 — Физическая доставка
+
+**Статус:** ~87% TUR55/Bronze
+
+### Added
+
+- **Физическая доставка** (TUR55 тезис 8) — `programs/program.enc`
+  - Папка `programs/` на ESP32 (офлайн-доставка)
+  - `main._find_packet()` — ищет `programs/program.enc`, потом `test_packet_engine.bin`
+  - `programs/*.enc` — в `.gitignore` (пакет секретный)
+  - `programs/readme.md` — обновлён (назначение папки)
+
+### Changed
+
+- **`main.py`** — `run_program(packet_path=None)` — автопоиск пакета
+- **`main.py`** — `has_network` (NTP только на ESP32, на CPython — skip без ошибки)
+- **`.gitignore`** — добавлен `programs/*.enc`
+- **`programs/readme.md`** — обновлён
+
+### Fixed
+
+- **NTP на CPython** — `NTP skipped (no network module)` вместо `NTP sync error`
+
+### Проверено на ESP32
+
+- Папка `programs/` создана: `os.mkdir('programs')`
+- `program.enc` залит через `mpremote fs cp`
+- `main.main()` → `Auto-found packet: programs/program.enc`
+- Пайплайн выполнен успешно
+
+### Коммиты
+
+- `888717b` — Физическая доставка: programs/program.enc
+- `2465438` — PROJECT_HISTORY: физическая доставка
+- `e1ecbba` — DECISIONS_LOG: Решение 26
+
+---
+
 ## [3.2.0] — 2026-10-15 — MQTT + NTP
 
 **Статус:** ~85% TUR55/Bronze
@@ -220,7 +258,7 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 - **`used_command_ids` в RAM** — теряется при перезагрузке (**исправлено в v3.1.0**)
 - **MQTT / сетевой стек** — не реализованы (**исправлено в v3.2.0**)
 - **`expires` не проверяется** — нет источника времени (**исправлено в v3.2.0**)
-- **Физическая доставка** (`programs/program.enc`) — не реализована
+- **Физическая доставка** — не реализована (**исправлено в v3.2.1**)
 - **`os.dupterm`** — не используется (нет перехвата `print`)
 
 ---
