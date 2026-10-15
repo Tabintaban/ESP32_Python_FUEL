@@ -8,8 +8,7 @@
 **Автор стандарта:** NOMOS-H
 **Дата фиксации стандарта:** 2026-04-10
 **Репозиторий стандарта:** https://github.com/Tabintaban/Protocol_TUR55
-
-**Текущий статус:** ~78% TUR55/Bronze
+**Текущий статус:** ~80% TUR55/Bronze
 **Последнее обновление:** 2026-10-15
 
 ---
@@ -166,6 +165,25 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 
 ---
 
+## Delivery Layer (сетевой слой)
+
+**Реализация:** `mqtt_client.py`, `mqtt_publisher.py`
+
+| Требование | Реализация | Статус |
+|---|---|---|
+| Приём пакетов по сети | `MQTTReceiver` (umqtt.simple) | ✅ |
+| Отправка пакетов | `MQTTPublisher` (paho-mqtt) | ✅ |
+| Wi-Fi подключение | `network.WLAN` | ✅ |
+| Проверка end-to-end | ESP32 принял 862 байта | ✅ |
+
+**Топик:** `tur55/device/esp32_001`
+**Брокер:** `broker.hivemq.com` (публичный)
+
+**Итог:** ✅ **закрыто** (тезис 8 TUR55 — Transport Freedom)
+
+---
+
+
 ## Тезисы манифеста TUR55
 
 | # | Тезис | Требование | Реализация |
@@ -173,7 +191,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | 5 | Sandbox | Изолированное выполнение | ✅ |
 | 6 | Cryptographic Truth | AES-256-GCM + secp256k1 | ✅ |
 | 7 | Blockchain Agnosticism | Не привязан к блокчейну | ✅ (не блокчейн-специфичен) |
-| 8 | Transport Freedom | Transport-independent | ✅ (`load_program(bytes)`) |
+| 8 | Transport Freedom | Transport-independent | ✅ (`load_program(bytes)` + MQTT) |
 | 9 | Universal License Token | — | ❌ (не в Layer 4) |
 | 11 | Secure Elements | eFuse / hardware key storage | ❌ **не сделано** |
 
@@ -198,6 +216,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | **6** | Whitelist | ✅ |
 | **6** | Таймаут | ✅ (кооперативный) |
 | **6** | Лимит памяти | ✅ |
+| **Delivery** | MQTT (приём/отправка) | ✅ |
 
 ---
 
@@ -208,6 +227,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 - ✅ **Раздел 4** — AES-256-GCM, ECDSA secp256k1, RSA-OAEP, BLAKE2s
 - ✅ **Раздел 5** — replay protection + NVS
 - ✅ **Раздел 6** — whitelist, таймаут, лимит памяти
+- ✅ **Delivery Layer** — MQTT (тезис 8, Transport Freedom)
 
 ## Что осталось
 
@@ -215,9 +235,8 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 |---|---|---|---|
 | 1 | **eFuse** для ключей | 4 | **высокий** (единственное незакрытое требование) |
 | 2 | **`set_time`** — источник времени | 5 | средний (когда появится NTP/MQTT) |
-| 3 | **MQTT** — сетевой слой | Delivery Layer | средний |
-| 4 | **Физическая доставка** (`programs/`) | — | низкий |
-| 5 | **Документация** (README, BUILD_GCM) | — | низкий |
+| 3 | **Физическая доставка** (`programs/`) | — | низкий |
+| 4 | **Документация** (README, BUILD_GCM) | — | низкий |
 
 ---
 
@@ -227,7 +246,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 2. **Кооперативный таймаут** — не прерывает зависший C-код. Hard-guarantee отсутствует.
 3. **`used_command_ids` в NVS** — сохраняется между перезагрузками. ✅
 4. **`expires` не проверяется** — нет источника времени.
-5. **MQTT / сетевой стек** — не реализованы.
+5. **MQTT / сетевой стек** — реализованы. ✅
 6. **Физическая доставка** — не реализована.
 7. **`os.dupterm`** — не используется (нет перехвата `print`).
 
