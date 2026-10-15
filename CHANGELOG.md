@@ -6,6 +6,56 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.2.0] — 2026-10-15 — MQTT + NTP
+
+**Статус:** ~85% TUR55/Bronze
+
+### Added
+
+- **MQTT** (Delivery Layer TUR55) — `mqtt_client.py`, `mqtt_publisher.py`
+  - `MQTTReceiver` — приём пакетов (umqtt.simple)
+  - `MQTTPublisher` — отправка (paho-mqtt)
+  - Wi-Fi подключение (`network.WLAN`)
+  - Топик: `tur55/device/esp32_001`
+  - Брокер: `broker.hivemq.com`
+- **NTP** — `time_sync.py`
+  - `sync_time(ssid, password)` — синхронизация через NTP
+  - `EPOCH_OFFSET = 946684800` (MicroPython → Unix)
+- **`main.py`** — NTP-интеграция
+  - Опциональный вызов `sync_time`
+  - `wifi_ssid`, `wifi_password` из `secrets.py`
+- **`secrets.py`** — Wi-Fi + MQTT настройки (в `.gitignore`)
+
+### Changed
+
+- **`main.py`** — `run_program` принимает `wifi_ssid`, `wifi_password`
+- **`main()`** — читает из `secrets.py` (fallback на `ImportError`)
+- **`build_test_packet_cpython.py`** — `expires` в JSON (+3600 / -3600)
+- **`.gitignore`** — добавлен `secrets.py`
+
+### Fixed
+
+- **`expires` проверяется** — NTP даёт точное время
+- **Fallback на CPython** — `NTP skipped`, работает без NTP
+
+### Проверено на ESP32
+
+- **MQTT end-to-end:** CPython → MQTT → ESP32 (862 байта)
+- **NTP:** `Time synced: 1792057463`
+- **`expires`:** +3600 → принят, -3600 → `Command expired`
+- **Replay:** второй запуск → `Command replay detected` (NVS)
+
+### Коммиты
+
+- `07f1739` — MQTT: mqtt_client + mqtt_publisher
+- `86b1c4d` — TODO: MQTT (~80%)
+- `b2750fa` — TUR55_COMPLIANCE: MQTT (~80%)
+- `6c2c910` — NTP: time_sync.py + expires в build_test_packet
+- `afabe77` — main.py: NTP-интеграция
+- `cf8c83f` — README_RU: форматирование markdown
+
+---
+
 ## [3.1.0] — 2026-10-15 — NVS для `used_command_ids`
 
 **Статус:** ~78% TUR55/Bronze
@@ -168,8 +218,8 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 - **eFuse** — не реализован (раздел 4 TUR55)
 - **Кооперативный таймаут** — не прерывает зависший C-код (hard-guarantee отсутствует)
 - **`used_command_ids` в RAM** — теряется при перезагрузке (**исправлено в v3.1.0**)
-- **`expires` не проверяется** — нет источника времени (NTP/MQTT)
-- **MQTT / сетевой стек** — не реализованы
+- **MQTT / сетевой стек** — не реализованы (**исправлено в v3.2.0**)
+- **`expires` не проверяется** — нет источника времени (**исправлено в v3.2.0**)
 - **Физическая доставка** (`programs/program.enc`) — не реализована
 - **`os.dupterm`** — не используется (нет перехвата `print`)
 
