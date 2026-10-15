@@ -161,6 +161,17 @@
 - [x] Проверка на ESP32: replay переживает Ctrl+D
 - [x] Тест на CPython: работает как раньше
 
+### Шаг 3.13 — MQTT (Delivery Layer TUR55)
+- [x] `umqtt.simple` установлен на ESP32 (`mip install`)
+- [x] `paho-mqtt` установлен на CPython
+- [x] `mqtt_client.py` — приём пакетов (`MQTTReceiver`)
+- [x] `mqtt_publisher.py` — отправка пакетов (`paho-mqtt`)
+- [x] Wi-Fi подключение (`network.WLAN`)
+- [x] **Проверено end-to-end:** CPython → MQTT → ESP32 (862 байта)
+- [x] **Полный пайплайн:** `mqtt_client` → `program_loader` → `execution_engine`
+- [x] Соответствие TUR55 тезис 8 (Transport Freedom)
+
+
 
 ### Документация проекта
 - [x] `.gitignore` — обновлён (`__pycache__`, `*.pyc`, `esp32_private_key.*`, `test_packet*.bin`, `executor_pubkey.bin`)
@@ -175,9 +186,10 @@
 - [ ] Загрузка ключей при старте
 
 ### Сетевой стек
-- [ ] MQTT-клиент (`umqtt.simple`)
+- [x] MQTT-клиент (`umqtt.simple`) — `mqtt_client.py`
+- [x] MQTT-издатель (`paho-mqtt`) — `mqtt_publisher.py`
+- [x] Приём пакетов по сети — проверено на ESP32 (862 байта)
 - [ ] HTTP-сервер (опционально)
-- [ ] Приём пакетов по сети
 - [ ] Единый интерфейс приёма (сеть + файл) — `run_from_bytes(packet)`
 
 ### Физическая доставка
@@ -224,7 +236,7 @@
 
 ## Текущий статус
 
-**Готово:** **~78%** TUR55/Bronze
+**Готово:** **~80%** TUR55/Bronze
 
 | Раздел | Статус |
 |---|---|
@@ -250,10 +262,10 @@
 - ✅ TUR55 работает на ESP32 (совместимость с MicroPython)
 - ✅ `main.py` — стандартный пайплайн (CPython + ESP32)
 - ✅ NVS — `used_command_ids` переживает перезагрузку
+- ✅ MQTT — приём пакетов TUR55 по сети (Delivery Layer)
 
 **Что осталось:**
 - eFuse для ключей
-- Источник времени для `expires` (NTP/MQTT)
-- Сетевой стек (MQTT)
+- Источник времени для `expires` (NTP)
 - Физическая доставка (`programs/program.enc`)
 - Документация (README, README_RU, CHANGELOG, TUR55_COMPLIANCE)
