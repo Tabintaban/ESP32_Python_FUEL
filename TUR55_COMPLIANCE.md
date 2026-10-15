@@ -9,8 +9,8 @@
 **Дата фиксации стандарта:** 2026-04-10
 **Репозиторий стандарта:** https://github.com/Tabintaban/Protocol_TUR55
 
-**Текущий статус:** ~75% TUR55/Bronze
-**Последнее обновление:** 2026-10-14
+**Текущий статус:** ~78% TUR55/Bronze
+**Последнее обновление:** 2026-10-15
 
 ---
 
@@ -120,8 +120,9 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | Требование | Реализация | Статус |
 |---|---|---|
 | Проверка `command_id` (replay) | `validate_command_id` — FIFO на 100 | ✅ |
+| Сохранение между перезагрузками | NVS (`tur55_replay`) | ✅ |
+| Fallback без NVS (CPython) | RAM | ✅ |
 | Проверка `expires` | `validate_expires` — опционально | ⏳ |
-| Уникальность `command_id` | `used_command_ids_set` | ✅ |
 
 **Логика проверок** (порядок):
 
@@ -134,7 +135,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 
 **Итог по разделу 5:** ✅ **закрыто** (с оговоркой про `expires`)
 
-**Оговорка:** `used_command_ids` в RAM — теряется при перезагрузке. Нужен NVS.
+**NVS:** `used_command_ids` сохраняются в NVS namespace `tur55_replay`. Проверено на ESP32 — replay переживает Ctrl+D. Fallback на RAM (CPython).
 
 ---
 
@@ -192,6 +193,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | **4** | BLAKE2s | ✅ |
 | **4** | **eFuse** | ❌ |
 | **5** | `command_id` (replay) | ✅ |
+| **5** | NVS (переживает перезагрузку) | ✅ |
 | **5** | `expires` | ⏳ (опционально) |
 | **6** | Whitelist | ✅ |
 | **6** | Таймаут | ✅ (кооперативный) |
@@ -204,7 +206,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 - ✅ **Раздел 3.2** — конверт TUR55
 - ✅ **Раздел 3.4** — формат пакета (round-trip работает)
 - ✅ **Раздел 4** — AES-256-GCM, ECDSA secp256k1, RSA-OAEP, BLAKE2s
-- ✅ **Раздел 5** — replay protection
+- ✅ **Раздел 5** — replay protection + NVS
 - ✅ **Раздел 6** — whitelist, таймаут, лимит памяти
 
 ## Что осталось
@@ -212,11 +214,10 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | # | Задача | Раздел TUR55 | Приоритет |
 |---|---|---|---|
 | 1 | **eFuse** для ключей | 4 | **высокий** (единственное незакрытое требование) |
-| 2 | **NVS** для `used_command_ids` | 5 | средний |
-| 3 | **`set_time`** — источник времени | 5 | средний (когда появится NTP/MQTT) |
-| 4 | **MQTT** — сетевой слой | Delivery Layer | средний |
-| 5 | **Физическая доставка** (`programs/`) | — | низкий |
-| 6 | **Документация** (README, BUILD_GCM) | — | низкий |
+| 2 | **`set_time`** — источник времени | 5 | средний (когда появится NTP/MQTT) |
+| 3 | **MQTT** — сетевой слой | Delivery Layer | средний |
+| 4 | **Физическая доставка** (`programs/`) | — | низкий |
+| 5 | **Документация** (README, BUILD_GCM) | — | низкий |
 
 ---
 
