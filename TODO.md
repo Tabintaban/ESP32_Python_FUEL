@@ -171,7 +171,23 @@
 - [x] **Полный пайплайн:** `mqtt_client` → `program_loader` → `execution_engine`
 - [x] Соответствие TUR55 тезис 8 (Transport Freedom)
 
+### Шаг 3.14 — NTP (источник времени для `expires`)
+- [x] `time_sync.py` — NTP через Wi-Fi
+- [x] `sync_time(ssid, password)` — синхронизация
+- [x] `EPOCH_OFFSET = 946684800` (MicroPython → Unix)
+- [x] Retry — 3 попытки, пауза 2 сек
+- [x] `main.py` — опциональный NTP-вызов
+- [x] `secrets.py` — Wi-Fi настройки (в `.gitignore`)
+- [x] **Проверено:** `+3600` → принят, `-3600` → `Command expired`
 
+### Шаг 3.15 — Физическая доставка (`programs/program.enc`)
+- [x] Папка `programs/` на ESP32 — создана
+- [x] `main._find_packet()` — ищет `programs/program.enc`, потом `test_packet_engine.bin`
+- [x] `run_program(packet_path=None)` — автопоиск
+- [x] `programs/*.enc` — в `.gitignore`
+- [x] `programs/readme.md` — обновлён
+- [x] **Проверено на ESP32:** `Auto-found packet: programs/program.enc`
+- [x] Соответствие TUR55 тезис 8 (Transport Freedom — офлайн)
 
 ### Документация проекта
 - [x] `.gitignore` — обновлён (`__pycache__`, `*.pyc`, `esp32_private_key.*`, `test_packet*.bin`, `executor_pubkey.bin`)
@@ -193,8 +209,12 @@
 - [ ] Единый интерфейс приёма (сеть + файл) — `run_from_bytes(packet)`
 
 ### Физическая доставка
-- [ ] Чтение `programs/program.enc` из файловой системы
-- [ ] Единый интерфейс с сетевым приёмом
+- [x] Чтение `programs/program.enc` из файловой системы — `main._find_packet()`
+- [x] Единый интерфейс с сетевым приёмом — `load_program(packet_bytes)`
+- [x] Папка `programs/` на ESP32 — создана
+- [x] `programs/*.enc` — в `.gitignore`
+- [x] `programs/readme.md` — обновлён
+- [x] **Проверено на ESP32:** `Auto-found packet: programs/program.enc`
 
 ### Песочница (продолжение)
 - [x] Убран `object_factory.py` (`exec()` без песочницы, не использовался)
@@ -236,7 +256,7 @@
 
 ## Текущий статус
 
-**Готово:** **~80%** TUR55/Bronze
+**Готово:** **~87%** TUR55/Bronze
 
 | Раздел | Статус |
 |---|---|
@@ -247,8 +267,10 @@
 | **Раздел 4** — BLAKE2s | ✅ Работает |
 | **Раздел 4** — eFuse | ❌ |
 | **Раздел 5** — command_id (NVS) | ✅ **ЗАКРЫТО** |
-| **Раздел 5** — expires | ⏳ опционально (нет источника времени) |
+| **Раздел 5** — expires (NTP) | ✅ **ЗАКРЫТО** |
 | **Раздел 6** — whitelist / таймаут / память | ✅ |
+| **Delivery** — MQTT | ✅ |
+| **Delivery** — physical (`programs/`) | ✅ |
 
 **Что сделано:**
 - ✅ Кастомная прошивка MicroPython v1.24.1 + ESP-IDF v5.2.2
@@ -263,9 +285,8 @@
 - ✅ `main.py` — стандартный пайплайн (CPython + ESP32)
 - ✅ NVS — `used_command_ids` переживает перезагрузку
 - ✅ MQTT — приём пакетов TUR55 по сети (Delivery Layer)
+- ✅ NTP — источник времени для `expires`
+- ✅ Физическая доставка — `programs/program.enc` (офлайн)
 
 **Что осталось:**
-- eFuse для ключей
-- Источник времени для `expires` (NTP)
-- Физическая доставка (`programs/program.enc`)
-- Документация (README, README_RU, CHANGELOG, TUR55_COMPLIANCE)
+- eFuse для ключей (раздел 4 TUR55)
