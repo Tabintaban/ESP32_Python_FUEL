@@ -69,9 +69,10 @@ class ProgramLoader:
         self.loaded_programs = {}
         self.validation_cache = {}
 
-        # Заход 2: replay protection (в RAM, позже — NVS)
+        # Заход 2: replay protection (NVS с fallback на RAM)
         self.used_command_ids = []
         self.used_command_ids_set = set()
+        self._load_used_command_ids()
 
         # Заход 2: синхронизация времени (опционально)
         self.current_time = 0
@@ -88,6 +89,52 @@ class ProgramLoader:
             raise TypeError("current_time must be int (Unix timestamp)")
         self.current_time = current_time
         self.time_synced = True
+
+    def _load_used_command_ids(self):
+        """
+        Загружает used_command_ids из NVS.
+
+        На ESP32: читает JSON-строку из NVS namespace "tur55_replay".
+        На CPython: NVS недоступен — fallback на RAM (пустой список).
+        """
+        try:
+            from esp32 import NVS
+        except ImportError:
+            return  # CPython — NVS нет
+
+        try:
+            nvs = NVS("tur55_replay")
+            buf = bytearray(4096)
+            length = nvs.get_blob("used_ids", buf)
+            data = buf[:length].decode()
+            ids = json.loads(data)
+            if isinstance(ids, list):
+                self.used_command_ids = ids
+                self.used_command_ids_set = set(ids)
+        except (OSError, ValueError):
+            # Ключ ещё не создан или повреждён — работаем с пустым списком
+            pass
+
+    def _save_used_command_ids(self):
+        """
+        Сохраняет used_command_ids в NVS.
+
+        На ESP32: пишет JSON-строку в NVS namespace "tur55_replay".
+        На CPython: NVS недоступен — молча выходим.
+        """
+        try:
+            from esp32 import NVS
+        except ImportError:
+            return  # CPython — NVS нет
+
+        try:
+            nvs = NVS("tur55_replay")
+            data = json.dumps(self.used_command_ids).encode()
+            nvs.set_blob("used_ids", data)
+            nvs.commit()  # без commit() изменения не сохранятся
+        except OSError:
+            pass
+
 
     # ------------------------------------------------------------------
     # Загрузка ключей
@@ -359,6 +406,7 @@ class ProgramLoader:
         Если уже был -> возвращает False.
 
         История ограничена USED_IDS_LIMIT (FIFO).
+        Сохраняется в NVS (ESP32) или в RAM (CPython).
         """
         command_id = program_data.get('command_id')
 
@@ -376,6 +424,9 @@ class ProgramLoader:
         if len(self.used_command_ids) > self.USED_IDS_LIMIT:
             oldest = self.used_command_ids.pop(0)
             self.used_command_ids_set.discard(oldest)
+
+        # Сохраняем в NVS
+        self._save_used_command_ids()
 
         return True
 
