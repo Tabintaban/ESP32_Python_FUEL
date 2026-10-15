@@ -79,6 +79,11 @@ def main():
     print("Executor secp256k1:", exec_pubkey.hex())
 
     # 2. Конверт 3.2 — безопасный код для CPython
+    import time as _time
+
+    # expires = сейчас + 1 час (для теста — точно в будущем)
+    expires_ts = int(_time.time()) - 3600
+
     json_data = {
         "tur55_version": "1.0",
         "command_id": "0xtest_engine_001",
@@ -92,6 +97,7 @@ def main():
             "runtime_limit_ms": 5000,
             "memory_limit_kb": 25,
             "permissions": ["time", "math"],
+            "expires": expires_ts,
             "functions": [],
             "setup": [
                 "x = 42",
