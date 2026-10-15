@@ -2,9 +2,9 @@
 
 **Цель:** привести проект к стандарту TUR55/Bronze **без отклонений**.
 
--**Дата начала работы:** 2026-10-09
+**Дата начала работы:** 2026-10-09
 **Дата последнего обновления:** 2026-10-15
-**Текущий статус:** ~78% TUR55/Bronze
+**Текущий статус:** ~85% TUR55/Bronze
 
 ---
 
@@ -363,10 +363,81 @@
 - `fb05eec` — TUR55_COMPLIANCE: NVS (старая версия)
 - `5e2a5c2` — TODO + TUR55_COMPLIANCE: NVS (~78%)
 - `f2c1855` — PROJECT_HISTORY: шапка (~78%)
+- `b67321b` — PROJECT_HISTORY: Сессия 10
+- `74a1473` — DECISIONS_LOG: Решение 24
+- `854236f` — CHANGELOG: v3.1.0
 
 ---
 
+## Сессия 11 (2026-10-15) — MQTT, NTP, `main.py`
 
+### Что делали
+- **MQTT** (Delivery Layer TUR55) — приём/отправка пакетов по сети
+- **NTP** — синхронизация времени для проверки `expires`
+- **`main.py`** — интеграция NTP (опционально)
+- **`secrets.py`** — Wi-Fi настройки (в `.gitignore`)
+
+### Результаты
+
+**MQTT:**
+- ✅ `umqtt.simple` — установлен на ESP32 (`mip install`)
+- ✅ `paho-mqtt` — установлен на CPython
+- ✅ `mqtt_client.py` — приём (`MQTTReceiver`)
+- ✅ `mqtt_publisher.py` — отправка (`paho-mqtt`)
+- ✅ Wi-Fi подключение — `network.WLAN`
+- ✅ **End-to-end проверено:** CPython → MQTT → ESP32 (862 байта)
+- ✅ **Полный пайплайн через MQTT:** `mqtt_client` → `program_loader` → `execution_engine`
+- ✅ **TUR55 тезис 8** (Transport Freedom) — **закрыт**
+
+**NTP:**
+- ✅ `time_sync.py` — NTP через Wi-Fi
+- ✅ `ntptime.settime()` — точное время
+- ✅ `EPOCH_OFFSET = 946684800` (MicroPython `time.time()` = секунды с 2000-01-01)
+- ✅ `loader.set_time(ts)` — `time_synced = True`
+- ✅ **`expires` проверяется:**
+  - `+3600` (будущее) → пакет **принят**
+  - `-3600` (прошлое) → `Command expired`
+
+**`main.py`:**
+- ✅ Опциональный NTP-вызов (`wifi_ssid`, `wifi_password`)
+- ✅ Чтение из `secrets.py` (fallback на `ImportError`)
+- ✅ На CPython — `NTP skipped` (нет `time_sync`)
+- ✅ На ESP32 — `Time synced: ...`
+- ✅ `secrets.py` — в `.gitignore`
+
+### Ошибки
+- **`OSError: -202`** при `mip install` на ESP32
+  - **Причина:** нет Wi-Fi на устройстве
+  - **Решение:** установить через `mpremote` с CPython
+- **`mpremote: failed to access COM3`**
+  - **Причина:** COM3 занят MicroPico/miniterm
+  - **Решение:** `MicroPico: Disconnect`, потом mpremote
+- **ESP32 в download mode** (`DOWNLOAD_BOOT`)
+  - **Причина:** кнопка EN с зажатым BOOT
+  - **Решение:** EN без BOOT
+- **NTP `ETIMEDOUT`** на **втором** запуске
+  - **Причина:** rate limit публичного NTP
+  - **Решение:** не критично, `expires` опционален; retry — потом
+- **`IndentationError` в `main.py`**
+  - **Причина:** `run_program` внутри класса `Logger` (4 пробела)
+  - **Решение:** убрать отступ, docstring — с 4 пробелами
+
+### Ключевые решения
+- **MQTT:** `broker.hivemq.com` (публичный), топик `tur55/device/esp32_001`
+- **NTP:** `pool.ntp.org`, `EPOCH_OFFSET = 946684800` (2000 → 1970)
+- **`secrets.py`** — Wi-Fi отдельно от кода (в `.gitignore`)
+- **NTP — опционален:** без Wi-Fi `expires` не проверяется, но replay работает
+- **`main.py`** — fallback: если `secrets.py` нет, работает без NTP
+
+### Коммиты
+- `07f1739` — MQTT: mqtt_client + mqtt_publisher
+- `86b1c4d` — TODO: MQTT (~80%)
+- `b2750fa` — TUR55_COMPLIANCE: MQTT (~80%)
+- `6c2c910` — NTP: time_sync.py + expires в build_test_packet
+- `afabe77` — main.py: NTP-интеграция
+- `cf8c83f` — README_RU: форматирование markdown
+
+---
 
 ## Общая хронология ключевых решений
 
@@ -394,12 +465,16 @@
 | 2026-10-14 | main.py — стандартный пайплайн | Одна точка входа |
 | 2026-10-14 | Удалить мёртвый код v2.0 | Чистота проекта |
 | 2026-10-15 | NVS для `used_command_ids` | Replay переживает перезагрузку |
+| 2026-10-15 | MQTT (Delivery Layer) | TUR55 тезис 8 — Transport Freedom |
+| 2026-10-15 | NTP + `expires` | Раздел 5 TUR55 — полностью закрыт |
+| 2026-10-15 | `main.py` + NTP | Опциональная синхронизация |
+| 2026-10-15 | `secrets.py` в `.gitignore` | Wi-Fi отдельно от кода |
 
 ---
 
 ## Текущий статус
 
-**~75% TUR55/Bronze**
+**~85% TUR55/Bronze**
 
 | Раздел | Статус |
 |---|---|
@@ -410,8 +485,9 @@
 | 4 — BLAKE2s | ✅ Работает |
 | 4 — eFuse | ❌ |
 | 5 — command_id (NVS) | ✅ **ЗАКРЫТО** |
-| 5 — expires | ⏳ опционально |
+| 5 — expires | ✅ **ЗАКРЫТО** |
 | 6 — whitelist / таймаут / память | ✅ |
+| **Delivery** — MQTT | ✅ (приём/отправка) |
 
 **Что сделано:**
 - ✅ Кастомная прошивка MicroPython v1.24.1 + ESP-IDF v5.2.2
@@ -425,10 +501,12 @@
 - ✅ TUR55 работает на ESP32
 - ✅ `main.py` — стандартный пайплайн
 - ✅ Проект очищен от мёртвого кода
+- ✅ NVS для `used_command_ids`
+- ✅ MQTT (Delivery Layer)
+- ✅ NTP + `expires` в `main.py`
 
 **Что осталось:**
 1. **eFuse** для ключей (раздел 4 TUR55)
-2. **MQTT** — сетевой слой
-3. **Источник времени** для `expires` (NTP/MQTT)
-4. **Физическая доставка** — `programs/program.enc`
-5. **Документация** — 3 файла (PROJECT_HISTORY, DECISIONS_LOG, CHANGELOG)
+2. **Retry в `time_sync`** — NTP надёжнее
+3. **Физическая доставка** — `programs/program.enc`
+4. **Документация** — 3 файла (PROJECT_HISTORY, DECISIONS_LOG, CHANGELOG)
