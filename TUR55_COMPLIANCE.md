@@ -8,7 +8,7 @@
 **Автор стандарта:** NOMOS-H
 **Дата фиксации стандарта:** 2026-04-10
 **Репозиторий стандарта:** https://github.com/Tabintaban/Protocol_TUR55
-**Текущий статус:** ~80% TUR55/Bronze
+**Текущий статус:** ~87% TUR55/Bronze
 **Последнее обновление:** 2026-10-15
 
 ---
@@ -165,21 +165,25 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 
 ---
 
-## Delivery Layer (сетевой слой)
+## Delivery Layer (сетевой слой + физическая доставка)
 
-**Реализация:** `mqtt_client.py`, `mqtt_publisher.py`
+**Реализация:** `mqtt_client.py`, `mqtt_publisher.py`, `main._find_packet()`
 
 | Требование | Реализация | Статус |
 |---|---|---|
-| Приём пакетов по сети | `MQTTReceiver` (umqtt.simple) | ✅ |
-| Отправка пакетов | `MQTTPublisher` (paho-mqtt) | ✅ |
+| Приём по сети | `MQTTReceiver` (umqtt.simple) | ✅ |
+| Отправка по сети | `MQTTPublisher` (paho-mqtt) | ✅ |
 | Wi-Fi подключение | `network.WLAN` | ✅ |
-| Проверка end-to-end | ESP32 принял 862 байта | ✅ |
+| **Физическая доставка** | **`programs/program.enc`** | **✅** |
+| **Автопоиск пакета** | **`main._find_packet()`** | **✅** |
+| End-to-end (MQTT) | ESP32 принял 862 байта | ✅ |
+| End-to-end (physical) | `Auto-found packet: programs/program.enc` | ✅ |
 
 **Топик:** `tur55/device/esp32_001`
 **Брокер:** `broker.hivemq.com` (публичный)
+**Папка:** `programs/program.enc` (офлайн, флешка / USB)
 
-**Итог:** ✅ **закрыто** (тезис 8 TUR55 — Transport Freedom)
+**Итог:** ✅ **закрыто** (тезис 8 TUR55 — Transport Freedom: MQTT + physical)
 
 ---
 
@@ -191,7 +195,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | 5 | Sandbox | Изолированное выполнение | ✅ |
 | 6 | Cryptographic Truth | AES-256-GCM + secp256k1 | ✅ |
 | 7 | Blockchain Agnosticism | Не привязан к блокчейну | ✅ (не блокчейн-специфичен) |
-| 8 | Transport Freedom | Transport-independent | ✅ (`load_program(bytes)` + MQTT) |
+| 8 | Transport Freedom | Transport-independent | ✅ (`load_program(bytes)` + MQTT + `programs/`) |
 | 9 | Universal License Token | — | ❌ (не в Layer 4) |
 | 11 | Secure Elements | eFuse / hardware key storage | ❌ **не сделано** |
 
@@ -216,7 +220,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | **6** | Whitelist | ✅ |
 | **6** | Таймаут | ✅ (кооперативный) |
 | **6** | Лимит памяти | ✅ |
-| **Delivery** | MQTT (приём/отправка) | ✅ |
+| **Delivery** | MQTT + physical | ✅ |
 
 ---
 
@@ -227,16 +231,14 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 - ✅ **Раздел 4** — AES-256-GCM, ECDSA secp256k1, RSA-OAEP, BLAKE2s
 - ✅ **Раздел 5** — replay protection + NVS
 - ✅ **Раздел 6** — whitelist, таймаут, лимит памяти
-- ✅ **Delivery Layer** — MQTT (тезис 8, Transport Freedom)
+- ✅ **Delivery Layer** — MQTT + physical (`programs/`) (тезис 8, Transport Freedom)
 
 ## Что осталось
 
 | # | Задача | Раздел TUR55 | Приоритет |
 |---|---|---|---|
 | 1 | **eFuse** для ключей | 4 | **высокий** (единственное незакрытое требование) |
-| 2 | **`set_time`** — источник времени | 5 | средний (когда появится NTP/MQTT) |
-| 3 | **Физическая доставка** (`programs/`) | — | низкий |
-| 4 | **Документация** (README, BUILD_GCM) | — | низкий |
+| 2 | **Документация** (README, BUILD_GCM) | — | низкий |
 
 ---
 
