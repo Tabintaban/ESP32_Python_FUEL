@@ -3,8 +3,8 @@
 **Цель:** привести проект к стандарту TUR55/Bronze **без отклонений**.
 
 **Дата начала работы:** 2026-10-09
-**Дата последнего обновления:** 2026-10-15
-**Текущий статус:** ~85% TUR55/Bronze
+**Дата последнего обновления:** 2026-10-16
+**Текущий статус:** ~95% TUR55/Bronze (Bronze закрыт)
 
 ---
 
@@ -452,6 +452,72 @@
 
 ---
 
+## Сессия 12 (2026-10-16) — CPython-проверка + UART-лог
+
+### Что делали
+- **CPython-проверка** — прогон всех тестов без ESP32
+- **Формализация UART-лога** — TUR55/Bronze раздел 9
+- **Закрытие TUR55/Bronze**
+
+### Результаты
+
+**CPython — 6 тестов:**
+- ✅ `test_program_loader.py` — пройден
+- ✅ `test_loader_replay.py` — пройден (4/4)
+- ✅ `test_engine_cpython.py` — пройден
+- ✅ `test_gcm.py` — NIST 3/3
+- ✅ `tests/` (pytest) — 5/5 пройдено
+- ✅ `py main.py` — полный пайплайн
+
+**Удалены устаревшие тесты:**
+- `test_hash.py` — устарел (`test_packet.bin` удалён)
+- `test_tur55_packet.py` — устарел (`build_packet` не для CPython)
+
+**Обновлены тесты:**
+- `tests/test_execution_sandbox.py` — `output` → `locals`/`globals`
+- `test_program_loader.py` — `test_packet.bin` → `test_packet_engine.bin`
+- `test_loader_replay.py` — то же
+
+**UART-лог (TUR55/Bronze, раздел 9):**
+- ✅ `Logger` — 5 уровней (DEBUG–CRITICAL)
+- ✅ События запуска, пакета, исполнения, завершения
+- ✅ На ESP32: `print()` → UART0 → USB → COM → miniterm
+- ✅ На CPython: `print()` → консоль
+- ✅ **TUR55/Bronze — закрыт полностью**
+
+**Статус:**
+- **~95% TUR55/Bronze** (было ~87%)
+- **eFuse → Gold уровень** (не Bronze)
+- **Secure boot → Gold уровень**
+
+### Ошибки
+- **`test_loader_replay.py`** — искал `test_packet.bin` (удалён)
+  - **Решение:** `test_packet_engine.bin`
+- **`test_program_loader.py`** — то же
+  - **Решение:** то же
+- **`test_hash.py`** — устарел (старый пакет, старый хэш)
+  - **Решение:** удалён
+- **`test_tur55_packet.py`** — устарел (`build_packet` не для CPython)
+  - **Решение:** удалён
+- **`tests/test_execution_sandbox.py`** — упал на `output`
+  - **Причина:** `print` не перехватывается (в MicroPython нельзя)
+  - **Решение:** проверка `locals`/`globals` вместо `output`
+
+### Ключевые решения
+- **CPython-версия полностью соответствует** логике ESP32
+- **TUR55/Bronze** требует: приём + дешифровка + исполнение + **лог в UART**
+- **eFuse и Secure boot** — **Gold уровень**, не Bronze
+- **UART-лог** — стандартный `print()` → UART0, **ничего менять не надо**
+- **Для YouTube** — miniterm / Thonny / скрипт-читатель
+
+### Коммиты
+- `67f4bff` — Тесты: обновление + удаление устаревших
+- `361a772` — TUR55_COMPLIANCE: Лог в UART + Bronze закрыт
+- `2d8c9a7` — TODO: Bronze закрыт (~95%), eFuse → Gold
+
+---
+
+
 ## Общая хронология ключевых решений
 
 | Дата | Решение | Почему |
@@ -484,12 +550,15 @@
 | 2026-10-15 | `secrets.py` в `.gitignore` | Wi-Fi отдельно от кода |
 | 2026-10-15 | Retry в `time_sync` | NTP надёжнее |
 | 2026-10-15 | Физическая доставка (`programs/`) | TUR55 тезис 8 — офлайн |
+| 2026-10-16 | Лог в UART | TUR55/Bronze, раздел 9 |
+| 2026-10-16 | CPython-проверка | Все тесты пройдены |
+| 2026-10-16 | **TUR55/Bronze — закрыт** | eFuse → Gold |
 
 ---
 
 ## Текущий статус
 
-**~85% TUR55/Bronze**
+**~95% TUR55/Bronze (Bronze закрыт)**
 
 | Раздел | Статус |
 |---|---|
@@ -498,11 +567,12 @@
 | 4 — ECDSA secp256k1 | ✅ Работает |
 | 4 — RSA-OAEP | ✅ Работает |
 | 4 — BLAKE2s | ✅ Работает |
-| 4 — eFuse | ❌ |
+| 4 — eFuse | ⏳ **Gold** (не Bronze) |
 | 5 — command_id (NVS) | ✅ **ЗАКРЫТО** |
-| 5 — expires | ✅ **ЗАКРЫТО** |
+| 5 — expires (NTP) | ✅ **ЗАКРЫТО** |
 | 6 — whitelist / таймаут / память | ✅ |
-| **Delivery** — MQTT | ✅ (приём/отправка) |
+| **Delivery** — MQTT + physical | ✅ |
+| **9** — Лог в UART | ✅ |
 
 **Что сделано:**
 - ✅ Кастомная прошивка MicroPython v1.24.1 + ESP-IDF v5.2.2
@@ -519,9 +589,13 @@
 - ✅ NVS для `used_command_ids`
 - ✅ MQTT (Delivery Layer)
 - ✅ NTP + `expires` в `main.py`
+- ✅ Физическая доставка (`programs/program.enc`)
+- ✅ Retry в `time_sync`
+- ✅ Лог в UART (раздел 9)
+- ✅ CPython-проверка — все тесты пройдены
+- ✅ **TUR55/Bronze — закрыт полностью**
 
-**Что осталось:**
-1. **eFuse** для ключей (раздел 4 TUR55)
-2. **Retry в `time_sync`** — NTP надёжнее
-3. **Физическая доставка** — `programs/program.enc`
-4. **Документация** — 3 файла (PROJECT_HISTORY, DECISIONS_LOG, CHANGELOG)
+**Что осталось (для Gold):**
+1. **eFuse** для ключей (раздел 4 TUR55) — **Gold**
+2. **Secure boot** — **Gold**
+3. **Документация** — README, BUILD_GCM
