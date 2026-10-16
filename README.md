@@ -4,7 +4,7 @@
 **Secure Execution Layer (Layer 4) of the TUR55 protocol.**
 Sandboxed MicroPython program execution for ESP32 with encryption, strict resource limits, and isolated runtime.
 
-[![Status](https://img.shields.io/badge/TUR55--Bronze-75%25-yellow)]()
+[![Status](https://img.shields.io/badge/TUR55--Bronze-95%25-brightgreen)]()
 [![MicroPython](https://img.shields.io/badge/MicroPython-v1.24.1-blue)]()
 [![ESP--IDF](https://img.shields.io/badge/ESP--IDF-v5.2.2-blue)]()
 
@@ -33,7 +33,7 @@ Sandboxed MicroPython program execution for ESP32 with encryption, strict resour
 
 ## Status
 
-**~75% TUR55/Bronze.**
+**~95% TUR55/Bronze — Bronze closed.**
 
 | Section | Status |
 |---|---|
@@ -43,11 +43,14 @@ Sandboxed MicroPython program execution for ESP32 with encryption, strict resour
 | 4 — ECDSA secp256k1 | ✅ |
 | 4 — RSA-OAEP | ✅ |
 | 4 — BLAKE2s | ✅ |
-| 4 — eFuse | ❌ |
-| 5 — `command_id` (replay) | ✅ |
-| 5 — `expires` | ⏳ optional |
+| 4 — eFuse | ⏳ Gold (not Bronze) |
+| 5 — `command_id` (replay) | ✅ NVS |
+| 5 — `expires` | ✅ NTP |
 | 6 — whitelist / timeout / memory | ✅ |
+| Delivery — MQTT + physical | ✅ |
+| 9 — UART log | ✅ |
 
+**TUR55/Bronze — closed fully.**
 **Pipeline works end-to-end on CPython and ESP32.**
 
 See [TUR55_COMPLIANCE.md](TUR55_COMPLIANCE.md) for the full compliance table.
@@ -296,8 +299,8 @@ packet = build_packet_cpython.build_packet(
 
 | File | Purpose |
 |---|---|
-| [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | Full history (9 sessions) |
-| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 23 key decisions |
+| [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | Full history (12 sessions) |
+| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 26 key decisions |
 | [ERRORS_AND_SOLUTIONS.md](ERRORS_AND_SOLUTIONS.md) | 28 errors and fixes |
 | [TODO.md](TODO.md) | Current plan |
 | [TUR55_COMPLIANCE.md](TUR55_COMPLIANCE.md) | Compliance table |
@@ -307,15 +310,16 @@ packet = build_packet_cpython.build_packet(
 
 ---
 
-## Known Limitations
+## Known Limitations (for Gold)
 
-1. **eFuse** not implemented — keys stored in `esp32_private_key.json` (plaintext).
-2. **Cooperative timeout** — does not interrupt hung C code. No hard guarantee.
-3. **`used_command_ids` in RAM** — lost on reboot. Needs NVS.
-4. **`expires` not checked** — no time source (NTP/MQTT not implemented).
-5. **MQTT / network stack** — not implemented.
-6. **Physical delivery** (`programs/program.enc`) — not implemented.
-7. **`os.dupterm`** — not used (no `print` interception).
+1. **eFuse** not implemented — **Gold level** (not Bronze). Keys in `esp32_private_key.json`.
+2. **Secure boot** — **Gold level**.
+3. **Cooperative timeout** — does not interrupt hung C code. No hard guarantee.
+4. **`used_command_ids` in NVS** — survives reboot. ✅
+5. **`expires` checked** — via NTP. ✅
+6. **MQTT / network stack** — implemented. ✅
+7. **Physical delivery** (`programs/program.enc`) — implemented. ✅
+8. **UART log** — implemented (Logger → stdout → UART0). ✅
 
 ---
 
@@ -324,15 +328,14 @@ packet = build_packet_cpython.build_packet(
 | Test | Platform | Purpose |
 |---|---|---|
 | `test_program_loader.py` | CPython | ProgramLoader |
-| `test_loader_replay.py` | CPython | Replay + expires |
+| `test_loader_replay.py` | CPython | Replay + expires (4/4) |
 | `test_engine_cpython.py` | CPython | Engine |
+| `test_gcm.py` | CPython | GCM (NIST 3/3) |
+| `tests/` (pytest) | CPython | Sandbox, Engine, Memory (5/5) |
 | `test_engine_esp32.py` | ESP32 | Engine (hardware) |
 | `test_esp32.py` | ESP32 | ProgramLoader (hardware) |
-| `test_tur55_packet.py` | CPython | Packet format |
 | `test_tur55_packet_esp32.py` | ESP32 | Packet format (hardware) |
-| `test_gcm.py` | CPython | GCM (pure Python) |
 | `test_gcm_esp32.py` | ESP32 | GCM (C-module) |
-| `test_hash.py` | CPython | Hashing |
 | `test_rsa_esp32.py` | ESP32 | RSA-OAEP (hardware) |
 
 ---
@@ -343,62 +346,62 @@ packet = build_packet_cpython.build_packet(
 ```
 ESP32_Python_FUEL/
 │
-├── main.py                              # Entry point — standard pipeline
-├── program_loader.py                    # Parse + validate TUR55 envelope
-├── execution_engine.py                  # Setup + loop execution
-├── execution_sandbox.py                 # Sandbox (whitelist, timeout, memory)
-├── tur55_packet.py                      # TUR55 packet format (build + parse)
-├── gcm_adapter.py                       # Unified GCM interface
-├── gcm.py                               # Pure Python GCM (CPython fallback)
-├── memory_optimizer.py                  # Memory management
+├── main.py                                              # Entry point — standard pipeline
+├── program_loader.py                                    # Parse + validate TUR55 envelope
+├── execution_engine.py                                  # Setup + loop execution
+├── execution_sandbox.py                                 # Sandbox (whitelist, timeout, memory)
+├── tur55_packet.py                                      # TUR55 packet format (build + parse)
+├── gcm_adapter.py                                       # Unified GCM interface
+├── gcm.py                                               # Pure Python GCM (CPython fallback)
+├── memory_optimizer.py                                  # Memory management
+├── mqtt_client.py                                       # MQTT receiver (ESP32)
+├── time_sync.py                                         # NTP time sync (ESP32)
 │
-├── build_packet_cpython.py              # Packet builder (executor side)
-├── build_test_packet_cpython.py         # Test packet builder
+├── build_packet_cpython.py                              # Packet builder (executor side)
+├── build_test_packet_cpython.py                         # Test packet builder
+├── mqtt_publisher.py                                    # MQTT publisher (CPython)
 │
-├── test_program_loader.py               # ProgramLoader (CPython)
-├── test_loader_replay.py                # Replay + expires
-├── test_engine_cpython.py               # Engine (CPython)
-├── test_engine_esp32.py                 # Engine (ESP32)
-├── test_esp32.py                        # ProgramLoader (ESP32)
-├── test_tur55_packet.py                 # Packet (CPython)
-├── test_tur55_packet_esp32.py           # Packet (ESP32)
-├── test_gcm.py                          # GCM (CPython)
-├── test_gcm_esp32.py                    # GCM (ESP32)
-├── test_hash.py                         # Hashing
-├── test_rsa_esp32.py                    # RSA-OAEP (ESP32)
+├── test_program_loader.py                               # ProgramLoader (CPython)
+├── test_loader_replay.py                                # Replay + expires (CPython)
+├── test_engine_cpython.py                               # Engine (CPython)
+├── test_engine_esp32.py                                 # Engine (ESP32)
+├── test_esp32.py                                        # ProgramLoader (ESP32)
+├── test_tur55_packet_esp32.py                           # Packet (ESP32)
+├── test_gcm.py                                          # GCM (CPython)
+├── test_gcm_esp32.py                                    # GCM (ESP32)
+├── test_rsa_esp32.py                                    # RSA-OAEP (ESP32)
 │
-├── tests/                               # Unit tests (pytest-style)
-│   ├── __init__.py
-│   ├── test_execution_engine.py
-│   ├── test_execution_sandbox.py
-│   └── test_memory_optimizer.py
+├── tests/                                               # Unit tests (pytest-style)
+│ ├── __init__.py
+│ ├── test_execution_engine.py
+│ ├── test_execution_sandbox.py
+│ └── test_memory_optimizer.py
 │
-├── patches/                             # ucryptography patches
-│   └── ucryptography/
-│       ├── des3_stubs.c
-│       ├── micropython.cmake
-│       └── modcryptography.c
+├── patches/ucryptography/                               # ucryptography patches                                    
+│ ├── des3_stubs.c                                       # 3DES stubs (DES was removed in ESP-IDF v5.0)
+│ ├── micropython.cmake                                  # Integration of ucryptography into the MicroPython build
+│ └── modcryptography.c                                  # Patch for mp_obj_int_to_bytes (wrapper for v1.24.1)
 │
-├── programs/                            # Encrypted program files (future)
-│   └── readme.md
-├── data/                                # Decrypted HTML/CSS/JS (future)
-│   └── readme.md
-├── utils/                               # Utilities
-│   └── readme.md
-├── .vscode/                             # VS Code settings
-│   └── settings.json
+├── programs/                                            # Offline packets (TUR55 physical delivery)
+│ └── readme.md
+├── data/                                                # Decrypted HTML/CSS/JS (future)
+│ └── readme.md
+├── utils/                                               # Utilities
+│ └── readme.md
+├── .vscode/                                             # VS Code settings
+│ └── settings.json
 │
-├── PROJECT_HISTORY.md                   # 9 sessions
-├── DECISIONS_LOG.md                     # 23 decisions
-├── ERRORS_AND_SOLUTIONS.md              # 28 errors
-├── TODO.md                              # Current plan
-├── TUR55_COMPLIANCE.md                  # Compliance table
-├── CHANGELOG.md                         # Version history
-├── BUILD_GCM_FIRMWARE.md                # Firmware build
-├── FIRMWARE_WITH_UCRYPTOGRAPHY.md       # ucryptography details
-├── README.md                            # This file
-├── README_RU.md                         # Russian version
-├── LICENSE.md                           # MIT
+├── PROJECT_HISTORY.md                                   # 12 sessions
+├── DECISIONS_LOG.md                                     # 26 decisions
+├── ERRORS_AND_SOLUTIONS.md                              # 28 errors
+├── TODO.md                                              # Current plan (Bronze closed)
+├── TUR55_COMPLIANCE.md                                  # Compliance table (~95% Bronze)
+├── CHANGELOG.md                                         # v3.3.0
+├── BUILD_GCM_FIRMWARE.md                                # Firmware build
+├── FIRMWARE_WITH_UCRYPTOGRAPHY.md                       # ucryptography details
+├── README.md                                            # This file
+├── README_RU.md                                         # Russian version
+├── LICENSE.md                                           # MIT
 └── .gitignore
 ```
 
@@ -406,6 +409,8 @@ ESP32_Python_FUEL/
 - `esp32_private_key.json` — RSA private key of ESP32
 - `executor_pubkey.bin` — secp256k1 pubkey of executor
 - `test_packet_engine.bin` — test packet
+- `secrets.py` — Wi-Fi credentials (SSID, password)
+- `programs/*.enc` — offline packets (physical delivery)
 
 ## License
 
