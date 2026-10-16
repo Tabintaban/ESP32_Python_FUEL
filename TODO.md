@@ -189,6 +189,26 @@
 - [x] **Проверено на ESP32:** `Auto-found packet: programs/program.enc`
 - [x] Соответствие TUR55 тезис 8 (Transport Freedom — офлайн)
 
+### Шаг 3.16 — Лог в UART (TUR55/Bronze, раздел 9)
+- [x] `Logger` — 5 уровней (DEBUG–CRITICAL)
+- [x] События запуска: `=== TUR55 Pipeline ===`
+- [x] События пакета: `Auto-found packet`, `command_id`, `device_id`
+- [x] События исполнения: `setup success`, `loop iterations`, `loop time_ms`
+- [x] События завершения: `=== Done ===`
+- [x] На ESP32: `print()` → UART0 → USB → COM → miniterm
+- [x] На CPython: `print()` → консоль
+- [x] **TUR55/Bronze — закрыт полностью**
+
+### Шаг 3.17 — CPython-проверка
+- [x] `test_program_loader.py` — пройден
+- [x] `test_loader_replay.py` — пройден (4/4)
+- [x] `test_engine_cpython.py` — пройден
+- [x] `test_gcm.py` — NIST 3/3
+- [x] `tests/` (pytest) — 5/5 пройдено
+- [x] `py main.py` — полный пайплайн работает
+- [x] Удалены устаревшие: `test_hash.py`, `test_tur55_packet.py`
+- [x] `tests/test_execution_sandbox.py` — обновлён под новый API
+
 ### Документация проекта
 - [x] `.gitignore` — обновлён (`__pycache__`, `*.pyc`, `esp32_private_key.*`, `test_packet*.bin`, `executor_pubkey.bin`)
 
@@ -196,10 +216,11 @@
 
 ## Часть 3. Что нужно сделать
 
-### Ключи (раздел 4)
-- [ ] Хранение ключей в **eFuse** (ESP32) — требование TUR55 тезис 11
+### Ключи (раздел 4) — для Gold
+- [ ] Хранение ключей в **eFuse** (ESP32) — **Gold уровень** (не Bronze)
 - [ ] Убрать `esp32_private_key.json` и `executor_pubkey.bin` из файловой системы
 - [ ] Загрузка ключей при старте
+- [ ] **Secure boot** — **Gold уровень**
 
 ### Сетевой стек
 - [x] MQTT-клиент (`umqtt.simple`) — `mqtt_client.py`
@@ -256,7 +277,7 @@
 
 ## Текущий статус
 
-**Готово:** **~87%** TUR55/Bronze
+**Готово:** **~95%** TUR55/Bronze (Bronze закрыт)
 
 | Раздел | Статус |
 |---|---|
@@ -265,12 +286,13 @@
 | **Раздел 4** — ECDSA secp256k1 | ✅ Работает |
 | **Раздел 4** — RSA-OAEP | ✅ Работает |
 | **Раздел 4** — BLAKE2s | ✅ Работает |
-| **Раздел 4** — eFuse | ❌ |
+| **Раздел 4** — eFuse | ⏳ Gold (не Bronze) |
 | **Раздел 5** — command_id (NVS) | ✅ **ЗАКРЫТО** |
 | **Раздел 5** — expires (NTP) | ✅ **ЗАКРЫТО** |
 | **Раздел 6** — whitelist / таймаут / память | ✅ |
 | **Delivery** — MQTT | ✅ |
 | **Delivery** — physical (`programs/`) | ✅ |
+| **Раздел 9** — Лог в UART | ✅ |
 
 **Что сделано:**
 - ✅ Кастомная прошивка MicroPython v1.24.1 + ESP-IDF v5.2.2
@@ -287,6 +309,10 @@
 - ✅ MQTT — приём пакетов TUR55 по сети (Delivery Layer)
 - ✅ NTP — источник времени для `expires`
 - ✅ Физическая доставка — `programs/program.enc` (офлайн)
+- ✅ Лог в UART — `Logger` → stdout → UART0
+- ✅ CPython-проверка — все тесты пройдены
+- ✅ **TUR55/Bronze — закрыт полностью**
 
-**Что осталось:**
-- eFuse для ключей (раздел 4 TUR55)
+**Что осталось (для Gold):**
+- eFuse для ключей (раздел 4 TUR55) — **Gold**
+- Secure boot — **Gold**
