@@ -1,7 +1,7 @@
 
 # Прошивка с C-модулями (GCM + ucryptography + secp256k1)
 
-**Дата:** 2026-10-14
+**Дата:** 2026-10-16
 **Статус:** ✅ Работает
 **Цель:** кастомная прошивка MicroPython для TUR55/Bronze.
 
@@ -173,7 +173,7 @@ DONE
 | [BUILD_GCM_FIRMWARE.md](BUILD_GCM_FIRMWARE.md) | Полная инструкция сборки |
 | [TUR55_COMPLIANCE.md](TUR55_COMPLIANCE.md) | Таблица соответствия TUR55 |
 | [ERRORS_AND_SOLUTIONS.md](ERRORS_AND_SOLUTIONS.md) | 28 ошибок и решений |
-| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 23 решения (Ed25519 → secp256k1) |
+| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 26 решений (Ed25519 → secp256k1) |
 | [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | История (Сессия 3 — ucryptography) |
 
 ---
@@ -186,24 +186,4 @@ DONE
 - **NIST SP 800-38D:** https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
 - **TUR55 Standard:** https://github.com/Tabintaban/Protocol_TUR55
 ```
-
-## Что изменилось
-
-**Добавлено:**
-- **Раздел «Что НЕ используется»** — Ed25519, SECP256R1, DES
-- **Проверка модулей TUR55** (шаг 6)
-- **Пайплайн TUR55** (шаг 7) — `test_engine_esp32`
-- **Связанные документы** — ссылки на 5 файлов
-- **Статус в таблице модулей** — что работает
-- **Примечание** про Ed25519
-
-**Изменено:**
-- **Дата:** 11.10 → **14.10**
-- **Заголовок:** «Прошивка с GCM + ucryptography» → **«Прошивка с C-модулями»**
-- **Ed25519** — зачёркнут, помечен как **«отказ»**
-- **usecp256k1** — помечен как **«основной»**
-- **ECDSA SECP256R1** — помечен как **«вспомогательный»**
-
-**Убрано:**
-- Ed25519 из основного блока проверок (оставлен только в «Что НЕ используется»)
 
