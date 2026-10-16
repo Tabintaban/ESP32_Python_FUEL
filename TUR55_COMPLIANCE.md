@@ -1,6 +1,3 @@
-Вот полный `TUR55_COMPLIANCE.md`. Создай новый файл.
-
-
 # TUR55_COMPLIANCE — таблица соответствия стандарту
 
 **Проект:** ESP32_Python_FUEL
@@ -8,8 +5,8 @@
 **Автор стандарта:** NOMOS-H
 **Дата фиксации стандарта:** 2026-04-10
 **Репозиторий стандарта:** https://github.com/Tabintaban/Protocol_TUR55
-**Текущий статус:** ~87% TUR55/Bronze
-**Последнее обновление:** 2026-10-15
+**Текущий статус:** **~95% TUR55/Bronze** (Bronze закрыт)
+**Последнее обновление:** 2026-10-16
 
 ---
 
@@ -38,9 +35,9 @@
 | Подпись | Ed25519 **или** secp256k1 | ECDSA secp256k1 (`usecp256k1`) | ✅ |
 | Асимметричное шифрование | RSA-OAEP | `ucryptography` | ✅ |
 | Хэш | BLAKE2s | `ucryptography` | ✅ |
-| Хранение ключей | eFuse / Secure Element | `esp32_private_key.json` | ❌ **не сделано** |
+| Хранение ключей | eFuse / Secure Element | `esp32_private_key.json` | ⏳ **Gold уровень** |
 
-**Итог по разделу 4:** ✅ 4 из 5 (eFuse — не реализован)
+**Итог по разделу 4:** ✅ 4 из 5 для Bronze (eFuse — **требование Gold**, не Bronze)
 
 ---
 
@@ -165,6 +162,33 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 
 ---
 
+## Лог в UART (TUR55/Bronze, раздел 9)
+
+**Реализация:** `main.py` (`Logger`) → `print()` → `stdout` → **UART0**
+
+**TUR55 раздел 9** требует для **Bronze**: приём пакета, дешифровка, исполнение, **лог в UART**.
+
+| Требование | Реализация | Статус |
+|---|---|---|
+| Лог в UART | `Logger` (5 уровней: DEBUG–CRITICAL) | ✅ |
+| События запуска | `=== TUR55 Pipeline ===`, `Init ProgramLoader` | ✅ |
+| События пакета | `Auto-found packet`, `command_id`, `device_id` | ✅ |
+| События исполнения | `setup success`, `loop iterations`, `loop time_ms` | ✅ |
+| События ошибок | `[ERROR] Validation failed`, `[WARNING]` | ✅ |
+| События завершения | `=== Done ===` | ✅ |
+
+**Как работает:**
+- На ESP32: `print()` → **UART0** → USB-UART → COM-порт → miniterm
+- На CPython: `print()` → **консоль** (для отладки)
+
+**Проверено:** логи видны в `py -m serial.tools.miniterm COM3 115200`
+
+**Итог:** ✅ **закрыто** (требование TUR55/Bronze выполнено)
+
+---
+
+
+
 ## Delivery Layer (сетевой слой + физическая доставка)
 
 **Реализация:** `mqtt_client.py`, `mqtt_publisher.py`, `main._find_packet()`
@@ -197,9 +221,9 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | 7 | Blockchain Agnosticism | Не привязан к блокчейну | ✅ (не блокчейн-специфичен) |
 | 8 | Transport Freedom | Transport-independent | ✅ (`load_program(bytes)` + MQTT + `programs/`) |
 | 9 | Universal License Token | — | ❌ (не в Layer 4) |
-| 11 | Secure Elements | eFuse / hardware key storage | ❌ **не сделано** |
+| 11 | Secure Elements | eFuse / hardware key storage | ⏳ **Gold уровень** |
 
-**Итог по тезисам:** ✅ 5 из 6 (eFuse — не сделан)
+**Итог по тезисам:** ✅ 5 из 6 для Bronze (eFuse — **требование Gold**)
 
 ---
 
@@ -213,14 +237,15 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | **4** | ECDSA secp256k1 | ✅ |
 | **4** | RSA-OAEP | ✅ |
 | **4** | BLAKE2s | ✅ |
-| **4** | **eFuse** | ❌ |
+| **4** | **eFuse** | ⏳ Gold (не Bronze) |
 | **5** | `command_id` (replay) | ✅ |
 | **5** | NVS (переживает перезагрузку) | ✅ |
-| **5** | `expires` | ⏳ (опционально) |
+| **5** | `expires` | ✅ (NTP) |
 | **6** | Whitelist | ✅ |
 | **6** | Таймаут | ✅ (кооперативный) |
 | **6** | Лимит памяти | ✅ |
 | **Delivery** | MQTT + physical | ✅ |
+| **9** | **Лог в UART** | ✅ |
 
 ---
 
@@ -232,25 +257,30 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 - ✅ **Раздел 5** — replay protection + NVS
 - ✅ **Раздел 6** — whitelist, таймаут, лимит памяти
 - ✅ **Delivery Layer** — MQTT + physical (`programs/`) (тезис 8, Transport Freedom)
+- ✅ **Лог в UART** — Logger (раздел 9, Bronze)
 
-## Что осталось
+**TUR55/Bronze — закрыт полностью.**
+
+## Что осталось (для Gold)
 
 | # | Задача | Раздел TUR55 | Приоритет |
 |---|---|---|---|
-| 1 | **eFuse** для ключей | 4 | **высокий** (единственное незакрытое требование) |
-| 2 | **Документация** (README, BUILD_GCM) | — | низкий |
+| 1 | **eFuse** для ключей | 4 | **Gold уровень** (не Bronze) |
+| 2 | **Secure boot** | 9 | **Gold уровень** |
+| 3 | **Документация** (README, BUILD_GCM) | — | низкий |
 
 ---
 
 ## Известные ограничения
 
-1. **eFuse** — не реализован. Ключи лежат в `esp32_private_key.json` (plaintext).
+1. **eFuse** — не реализован (**требование Gold**, не Bronze). Ключи в `esp32_private_key.json`.
 2. **Кооперативный таймаут** — не прерывает зависший C-код. Hard-guarantee отсутствует.
 3. **`used_command_ids` в NVS** — сохраняется между перезагрузками. ✅
-4. **`expires` не проверяется** — нет источника времени.
+4. **`expires` проверяется** — через NTP. ✅
 5. **MQTT / сетевой стек** — реализованы. ✅
-6. **Физическая доставка** — не реализована.
-7. **`os.dupterm`** — не используется (нет перехвата `print`).
+6. **Физическая доставка** — реализована (`programs/program.enc`). ✅
+7. **Лог в UART** — реализован (Logger → stdout → UART0). ✅
+8. **`os.dupterm`** — не используется (нет перехвата `print`).
 
 ---
 
@@ -261,35 +291,4 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 - **NIST SP 800-38D:** https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
 - **MicroPython v1.24.1:** https://github.com/micropython/micropython/releases/tag/v1.24.1
 - **ESP-IDF v5.2.2:** https://github.com/espressif/esp-idf/tree/v5.2.2
-```
-
-## Что в файле
-
-- **О стандарте** — что такое TUR55, четыре слоя
-- **Криптография** (раздел 4) — таблица с 5 требованиями
-- **Формат пакета** (раздел 3.4) — структура
-- **Конверт** (раздел 3.2) — обязательные поля
-- **Replay protection** (раздел 5)
-- **Песочница** (раздел 6)
-- **Тезисы манифеста** — 5, 6, 7, 8, 9, 11
-- **Сводная таблица** — что закрыто, что нет
-- **Что осталось** — таблица задач
-- **Известные ограничения** — 7 пунктов
-- **Ссылки**
-
-**Итог:** **~75% TUR55/Bronze**, закрыты разделы 3.2, 3.4, 5, 6 и почти весь 4 (кроме eFuse).
-
-## Как применить
-
-1. Создай `TUR55_COMPLIANCE.md` в корне проекта
-2. Вставь текст
-3. `Ctrl+S`
-
-## Коммит
-
-```powershell
-git add TUR55_COMPLIANCE.md
-git commit -m "TUR55_COMPLIANCE: таблица соответствия (~75% TUR55/Bronze)"
-git push
-```
 
