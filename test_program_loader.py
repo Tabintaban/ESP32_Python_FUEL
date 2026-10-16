@@ -1,7 +1,7 @@
 """
 Тест ProgramLoader на CPython.
 
-Читает test_packet.bin, прогоняет через ProgramLoader.load_program(),
+Читает test_packet_engine.bin, прогоняет через ProgramLoader.load_program(),
 проверяет результат.
 """
 
@@ -28,9 +28,9 @@ def main():
         return 1
 
     # 2. Загрузка пакета
-    print("\n2. Loading test_packet.bin...")
+    print("\n2. Loading test_packet_engine.bin...")
     try:
-        with open("test_packet.bin", "rb") as f:
+        with open("test_packet_engine.bin", "rb") as f:
             packet_bytes = f.read()
         print("   Packet size:", len(packet_bytes), "bytes")
     except Exception as e:

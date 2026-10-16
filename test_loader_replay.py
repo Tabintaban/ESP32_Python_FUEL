@@ -20,7 +20,7 @@ def main():
     print("=" * 60)
 
     # Читаем пакет
-    with open("test_packet.bin", "rb") as f:
+    with open("test_packet_engine.bin", "rb") as f:
         packet_bytes = f.read()
     print("\nPacket size:", len(packet_bytes), "bytes")
 
