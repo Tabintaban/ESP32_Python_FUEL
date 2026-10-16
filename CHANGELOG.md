@@ -6,6 +6,57 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.3.0] — 2026-10-16 — TUR55/Bronze закрыт
+
+**Статус:** ~95% TUR55/Bronze (Bronze закрыт)
+
+### Added
+
+- **Лог в UART** (TUR55/Bronze, раздел 9)
+  - `Logger` — 5 уровней (DEBUG–CRITICAL)
+  - События запуска, пакета, исполнения, завершения
+  - На ESP32: `print()` → UART0 → USB → COM → miniterm
+  - На CPython: `print()` → консоль
+- **CPython-проверка** — все тесты без ESP32
+  - `test_program_loader.py`, `test_loader_replay.py`, `test_engine_cpython.py`
+  - `test_gcm.py` — NIST 3/3
+  - `tests/` (pytest) — 5/5
+  - `py main.py` — полный пайплайн
+
+### Changed
+
+- **`tests/test_execution_sandbox.py`** — проверка `locals`/`globals` вместо `output`
+- **`test_program_loader.py`** — `test_packet.bin` → `test_packet_engine.bin`
+- **`test_loader_replay.py`** — то же
+- **`TUR55_COMPLIANCE.md`** — Лог в UART, Bronze закрыт, eFuse → Gold
+- **`TODO.md`** — ~95%, eFuse → Gold
+- **`PROJECT_HISTORY.md`** — Сессия 12
+
+### Removed
+
+- **`test_hash.py`** — устарел (`test_packet.bin` удалён)
+- **`test_tur55_packet.py`** — устарел (`build_packet` не для CPython)
+
+### Fixed
+
+- **CPython-версия** — все тесты работают без ESP32
+- **`print` не перехватывается** — проверка через `locals`/`globals`
+
+### Проверено
+
+- **CPython:** 6 тестов + `py main.py` — все пройдены
+- **ESP32:** round-trip, NVS, NTP, MQTT, physical — работают
+- **TUR55/Bronze:** приём + дешифровка + исполнение + лог в UART — **закрыто**
+
+### Коммиты
+
+- `67f4bff` — Тесты: обновление + удаление устаревших
+- `361a772` — TUR55_COMPLIANCE: Лог в UART + Bronze закрыт
+- `2d8c9a7` — TODO: Bronze закрыт (~95%), eFuse → Gold
+- `08c9b1b` — PROJECT_HISTORY: статус в конце
+
+---
+
 ## [3.2.1] — 2026-10-16 — Физическая доставка
 
 **Статус:** ~87% TUR55/Bronze
@@ -259,6 +310,8 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 - **MQTT / сетевой стек** — не реализованы (**исправлено в v3.2.0**)
 - **`expires` не проверяется** — нет источника времени (**исправлено в v3.2.0**)
 - **Физическая доставка** — не реализована (**исправлено в v3.2.1**)
+- **Лог в UART** — не формализован (**исправлено в v3.3.0**)
+- **CPython-проверка** — не прогонялась (**исправлено в v3.3.0**)
 - **`os.dupterm`** — не используется (нет перехвата `print`)
 
 ---
