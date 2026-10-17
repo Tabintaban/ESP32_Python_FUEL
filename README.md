@@ -209,6 +209,35 @@ loop iter 0 x = 42
 
 ---
 
+## Secrets (Wi-Fi, MQTT)
+
+Create `secrets.py` in the project root (it is **gitignored**).
+
+**Template:**
+
+```python
+# secrets.py — NOT in git
+WIFI_SSID = "YOUR_SSID"
+WIFI_PASSWORD = "YOUR_PASSWORD"
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_TOPIC = "tur55/device/esp32_001"
+
+Without secrets.py:
+
+NTP skipped (expires not checked)
+
+MQTT skipped (only file / programs/program.enc works)
+
+Pipeline works — just no time sync and no network
+
+With secrets.py:
+
+NTP sync on ESP32
+
+MQTT receive (if mqtt_client.py used)
+```
+---
+
 ## TUR55 Envelope Format (section 3.2)
 
 ```json

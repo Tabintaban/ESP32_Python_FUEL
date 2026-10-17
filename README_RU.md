@@ -211,6 +211,34 @@ loop iter 0 x = 42
 
 ---
 
+## Секреты (Wi-Fi, MQTT)
+
+Создай `secrets.py` в корне проекта (файл **в `.gitignore`**).
+
+**Шаблон:**
+
+```python
+# secrets.py — НЕ в git
+WIFI_SSID = "YOUR_SSID"
+WIFI_PASSWORD = "YOUR_PASSWORD"
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_TOPIC = "tur55/device/esp32_001"
+
+Без secrets.py:
+
+NTP пропускается (expires не проверяется)
+
+MQTT пропускается (работает только файл / programs/program.enc)
+
+Пайплайн работает — просто без синхронизации времени и сети
+
+С secrets.py:
+
+NTP на ESP32
+
+MQTT (если используется mqtt_client.py)
+```
+
 ## Формат конверта TUR55 (раздел 3.2)
 
 ```json
