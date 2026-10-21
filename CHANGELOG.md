@@ -6,6 +6,38 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.4.0] — 2026-10-21 — Приёмка end-to-end (MVP) с TUR55_Executor
+
+**Статус:** ✅ MVP принят. Сквозной сценарий работает: Executor → пакет TUR55 → ESP32 → исполнение.
+
+### Added
+
+- **`manifest.py`** — конфигурация заморозки (freeze) Python-модулей в прошивку:
+  `main.py`, `program_loader.py`, `execution_engine.py`, `execution_sandbox.py`, `tur55_packet.py`, `gcm_adapter.py`, `time_sync.py`.
+- **`gc.threshold(1024)`** в `main.py` — обход нехватки RAM при инициализации `ProgramLoader` (RSA-ключ).
+- **`max_iterations` из пакета** — `main.py::run_program` теперь читает `execution.max_iterations` (или `custom_data.duration_sec * 2`) из JSON-конверта.
+
+### Changed
+
+- **`main.py::run_program`** — параметр `max_iterations` по умолчанию `None` (читается из пакета).
+- **`main.py::main()`** — не передаёт `max_iterations=5` жёстко; читает из пакета.
+- **Сборка прошивки** — используется `FROZEN_MANIFEST=/path/to/manifest.py` для заморозки Python-модулей.
+- **Устранена ошибка `RuntimeError: rsa_private_numbers`** — после добавления `gc.threshold(1024)` и `freeze` (память освобождена, `ucryptography` инициализируется корректно).
+
+### Fixed
+
+- **`RuntimeError: rsa_private_numbers`** при `ProgramLoader.__init__` (нехватка RAM → `gc.threshold` + `freeze`).
+- **`max_iterations=5` жёстко** — теперь из пакета (240 из `duration_sec: 120`).
+
+### Приёмка
+
+- **2026-10-21** — Executor сгенерировал `program.enc` (988 байт, с `max_iterations: 240`).
+- ESP32: `Auto-found packet: programs/program.enc`, `parse_packet` OK, `setup success: True`, `loop iterations: 240` (~4 минуты), лампочка мигала и выключилась.
+
+---
+
+
+
 ## [3.3.0] — 2026-10-16 — TUR55/Bronze закрыт
 
 **Статус:** ~95% TUR55/Bronze (Bronze закрыт)
