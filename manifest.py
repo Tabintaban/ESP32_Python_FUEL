@@ -13,4 +13,5 @@ freeze(".", (
     "gcm_adapter.py",
     "time_sync.py",
     # Добавьте сюда другие .py файлы, которые используются в проекте
+    "mqtt_client.py",
 ))
