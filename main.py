@@ -19,6 +19,7 @@ main.py — главная точка входа ESP32_Python_FUEL.
 """
 
 import gc
+gc.threshold(1024)
 
 from program_loader import ProgramLoader
 from execution_engine import ExecutionEngine
@@ -84,7 +85,7 @@ def _find_packet():
 
 
 
-def run_program(packet_path=None, max_iterations=5, log_level="INFO",
+def run_program(packet_path=None, max_iterations=None, log_level="INFO",
                 wifi_ssid=None, wifi_password=None):
     """
     Основной пайплайн TUR55: загрузка пакета -> валидация -> выполнение.
@@ -157,6 +158,14 @@ def run_program(packet_path=None, max_iterations=5, log_level="INFO",
     logger.info("memory_limit_kb:  %s" % execution.get('memory_limit_kb'))
 
     # 4. Выполнение
+    # Читаем max_iterations из пакета (execution.max_iterations), fallback на 5
+    if max_iterations is None:
+        max_iterations = int(
+            data.get("execution", {}).get("max_iterations")
+            or data.get("custom_data", {}).get("duration_sec", 5) * 2
+            or 5
+        )
+
     logger.info("Executing program (max_iterations=%d)..." % max_iterations)
     result = engine.execute_program(data, max_iterations=max_iterations)
 
@@ -197,8 +206,7 @@ def main():
         pass  # secrets.py нет — работаем без NTP
 
     try:
-        run_program(max_iterations=5,
-                    wifi_ssid=wifi_ssid, wifi_password=wifi_password)
+        run_program(wifi_ssid=wifi_ssid, wifi_password=wifi_password)
 
     except MemoryError as e:
         print("[CRITICAL] Out of memory: %s" % e)
