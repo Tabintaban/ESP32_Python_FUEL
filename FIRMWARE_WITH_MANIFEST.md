@@ -14,6 +14,7 @@
 |---|---|---|
 | **`manifest.py`** | Заморозка Python-модулей в прошивку | Корень проекта ESP32_Python_FUEL |
 | **`FROZEN_MANIFEST`** | Флаг `make` для сборки с манифестом | Команда `make` |
+| **`mqtt_client.py`** | MQTT-приём на ESP32 (транспорт Delivery) | `manifest.py` (freeze) |
 | **`gc.threshold(1024)`** | Обход нехватки RAM при инициализации RSA-ключа | `main.py`, строка 22 |
 
 **Без `manifest.py` и `gc.threshold`** — ошибка `RuntimeError: rsa_private_numbers` (нехватка RAM).
@@ -34,6 +35,7 @@ freeze(".", (
     "tur55_packet.py",
     "gcm_adapter.py",
     "time_sync.py",
+    "mqtt_client.py",
 ))
 ```
 

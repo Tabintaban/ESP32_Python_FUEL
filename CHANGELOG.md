@@ -6,6 +6,28 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.4.1] — 2026-10-22 — MQTT end-to-end принят
+
+**Статус:** ✅ MQTT-транспорт работает end-to-end (Executor → ESP32).
+
+### Added
+
+- **`mqtt_client.py` в `manifest.py`** — заморожен в прошивку (MQTT-приём на ESP32).
+
+### Changed
+
+- **MQTT-брокер:** `broker.hivemq.com` → **`broker.emqx.io`** (публичный `hivemq` **не доставлял** пакеты).
+- **`secrets.py`** — `MQTT_BROKER = "broker.emqx.io"`.
+
+### Приёмка MQTT
+
+- **2026-10-21** — Executor опубликовал пакет (988 байт) в `broker.emqx.io`.
+- ESP32: `Wi-Fi connected`, `MQTT connected`, `Subscribed to: tur55/device/esp32_001`, `Got packet: 988 bytes`.
+- `parse_packet` + `execute_program` → **светодиод мигал 240 итераций (~4 минуты)** и выключился.
+
+---
+
+
 ## [3.4.0] — 2026-10-21 — Приёмка end-to-end (MVP) с TUR55_Executor
 
 **Статус:** ✅ MVP принят. Сквозной сценарий работает: Executor → пакет TUR55 → ESP32 → исполнение.
