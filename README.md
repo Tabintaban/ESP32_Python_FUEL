@@ -163,21 +163,17 @@ py -m esptool --chip esp32 --port COM3 --baud 460800 write-flash --flash-mode di
 
 **WARNING:** Do NOT flash `micropython.bin` at `0x1000` — this causes boot loop.
 
-### 3. Upload modules to ESP32
+### 3. Upload data files to ESP32
 
-Upload via MicroPico or `mpremote`:
+**Python modules are frozen into firmware** (see [FIRMWARE_WITH_MANIFEST.md](FIRMWARE_WITH_MANIFEST.md)). **No need to upload them.**
+
+Upload via `mpremote` (or MicroPico):
 
 ```
-main.py
-program_loader.py
-execution_engine.py
-execution_sandbox.py
-tur55_packet.py
-gcm_adapter.py
-memory_optimizer.py
-test_packet_engine.bin
+secrets.py
 esp32_private_key.json
 executor_pubkey.bin
+programs/program.enc (for FILE-transport)
 ```
 
 ### 4. Run
@@ -219,7 +215,7 @@ Create `secrets.py` in the project root (it is **gitignored**).
 # secrets.py — NOT in git
 WIFI_SSID = "YOUR_SSID"
 WIFI_PASSWORD = "YOUR_PASSWORD"
-MQTT_BROKER = "broker.hivemq.com"
+MQTT_BROKER = "broker.emqx.io"
 MQTT_TOPIC = "tur55/device/esp32_001"
 
 Without secrets.py:
@@ -329,13 +325,14 @@ packet = build_packet_cpython.build_packet(
 | File | Purpose |
 |---|---|
 | [PROJECT_HISTORY.md](PROJECT_HISTORY.md) | Full history (12 sessions) |
-| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 26 key decisions |
+| [DECISIONS_LOG.md](DECISIONS_LOG.md) | 31 key decisions |
 | [ERRORS_AND_SOLUTIONS.md](ERRORS_AND_SOLUTIONS.md) | 28 errors and fixes |
 | [TODO.md](TODO.md) | Current plan |
 | [TUR55_COMPLIANCE.md](TUR55_COMPLIANCE.md) | Compliance table |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [BUILD_GCM_FIRMWARE.md](BUILD_GCM_FIRMWARE.md) | Firmware build instructions |
 | [FIRMWARE_WITH_UCRYPTOGRAPHY.md](FIRMWARE_WITH_UCRYPTOGRAPHY.md) | ucryptography details |
+| [FIRMWARE_WITH_MANIFEST.md](FIRMWARE_WITH_MANIFEST.md) | Firmware build with `freeze` + `gc.threshold` |
 
 ---
 
@@ -421,11 +418,11 @@ ESP32_Python_FUEL/
 │ └── settings.json
 │
 ├── PROJECT_HISTORY.md                                   # 12 sessions
-├── DECISIONS_LOG.md                                     # 26 decisions
+├── DECISIONS_LOG.md                                     # 31 decisions
 ├── ERRORS_AND_SOLUTIONS.md                              # 28 errors
 ├── TODO.md                                              # Current plan (Bronze closed)
 ├── TUR55_COMPLIANCE.md                                  # Compliance table (~95% Bronze)
-├── CHANGELOG.md                                         # v3.3.0
+├── CHANGELOG.md                                         # v3.4.1
 ├── BUILD_GCM_FIRMWARE.md                                # Firmware build
 ├── FIRMWARE_WITH_UCRYPTOGRAPHY.md                       # ucryptography details
 ├── README.md                                            # This file
