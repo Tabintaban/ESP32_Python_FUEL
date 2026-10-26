@@ -6,7 +6,7 @@ TUR55 Delivery Layer: пакет приходит по MQTT вместо фай�
 
 Использование:
     from mqtt_client import MQTTReceiver
-    receiver = MQTTReceiver("ssid", "password", "broker.hivemq.com")
+    receiver = MQTTReceiver("ssid", "password", "44.232.241.40")
     receiver.connect()
     packet = receiver.wait_for_packet("tur55/device/esp32_001", timeout=30)
     receiver.disconnect()
@@ -18,7 +18,7 @@ import time
 import gc
 
 try:
-    from umqtt.simple import MQTTClient
+    from umqtt.robust import MQTTClient
 except ImportError:
     MQTTClient = None
 
@@ -65,7 +65,7 @@ class MQTTReceiver:
     def connect(self):
         """Подключение к Wi-Fi + MQTT брокеру."""
         if MQTTClient is None:
-            raise ImportError("umqtt.simple not installed")
+            raise ImportError("umqtt.robust not installed")
 
         if not self._wifi_connect():
             return False

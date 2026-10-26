@@ -371,14 +371,10 @@ class ProgramLoader:
     def validate_expires(self, program_data):
         """
         Проверяет срок действия команды.
-
-        Логика:
-          - если expires нет -> пропускаем (опциональное поле)
-          - если время не синхронизировано -> пропускаем
-          - если время синхронизировано -> expires >= current_time
-
-        Returns:
-            bool
+        
+        Использует RTC (machine.RTC().datetime()), а не time.time(),
+        потому что в MicroPython 1.24.1 на ESP32 time.time() 
+        возвращает неверное значение (баг NTP_DELTA).
         """
         execution = program_data.get('execution', {})
         expires = execution.get('expires')
@@ -392,8 +388,17 @@ class ProgramLoader:
         if not self.time_synced:
             return True
 
-        return expires >= self.current_time
-
+        try:
+            import machine
+            rtc = machine.RTC().datetime()
+            # rtc = (year, month, day, weekday, hour, minute, second, microsecond)
+            import time as _time
+            t = (rtc[0], rtc[1], rtc[2], rtc[4], rtc[5], rtc[6], 0, 0)
+            current_ts = _time.mktime(t)
+            return expires >= current_ts
+        except Exception:
+            return True
+        
     # ------------------------------------------------------------------
     # Replay protection (TUR55 раздел 5)
     # ------------------------------------------------------------------
