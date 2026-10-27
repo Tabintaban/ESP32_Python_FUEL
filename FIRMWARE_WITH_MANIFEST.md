@@ -211,6 +211,26 @@ main.main()
 
 ---
 
+## Важно: `boot.py` и `umqtt.robust`
+
+С версии **v3.5.0** (26.10.2026) в проекте появились два изменения, которые важно учитывать при сборке и заливке:
+
+### 1. `boot.py` не замораживается
+
+- **`boot.py` не включён** в `manifest.py`.
+- Он выполняется при каждом включении ESP32 (до `main.py`).
+- Его можно менять на диске без пересборки прошивки (залить через `mpremote fs cp`).
+- В нём реализована автоматическая NTP-синхронизация (см. `CHANGELOG.md` v3.5.0, `DECISIONS_LOG.md` решение №34).
+
+### 2. `mqtt_client.py` требует `umqtt.robust`
+
+- С версии **v3.5.0** `mqtt_client.py` использует **`umqtt.robust`** вместо `umqtt.simple`.
+- В стандартной прошивке MicroPython `umqtt.robust` **уже включён**.
+- Если вы собираете кастомную прошивку — проверьте наличие `lib/umqtt/robust.py`.
+- Если `umqtt.robust` отсутствует, `mqtt_client.py` выдаст `ImportError: umqtt.robust not installed`.
+
+---
+
 ## Ссылки
 
 - **BUILD_GCM_FIRMWARE.md** — базовая сборка (C-модули).

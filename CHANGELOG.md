@@ -6,6 +6,44 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.5.0] — 2026-10-26 — Автоматический NTP, RTC-проверка, `umqtt.robust`
+
+**Статус:** ✅ Синхронизация времени при загрузке, обход багов MicroPython 1.24.1.
+
+### Added
+
+- **`boot.py`** — автоматическая синхронизация времени при каждом включении ESP32.
+  - Подключение к Wi-Fi → NTP-синхронизация по списку IP-адресов → запуск `main.py`.
+  - NTP-серверы: `216.239.35.8` (time.google.com), `162.159.200.1` (Cloudflare), `129.6.15.28` (NIST).
+  - При неудаче — 3 попытки на каждый сервер, затем перезагрузка.
+
+### Changed
+
+- **`mqtt_client.py`** — переход с `umqtt.simple` на **`umqtt.robust`**.
+  - Причина: `umqtt.simple` вызывает `getaddrinfo()`, который на ESP32 падает с `OSError: -202` (сбой DNS).
+  - `umqtt.robust` с передачей **IP-адреса брокера** обходит этот баг.
+- **`program_loader.py::validate_expires`** — использует **`machine.RTC().datetime()`** вместо `time.time()`.
+  - Причина: в MicroPython 1.24.1 на ESP32 `time.time()` возвращает неверное значение (баг `NTP_DELTA`), но RTC устанавливается корректно.
+
+### Fixed
+
+- **`OSError: -202`** при подключении к MQTT-брокеру (сбой `getaddrinfo` в `umqtt.simple`).
+- **`[ERROR] Command expired`** при валидном `expires` (из-за неверного `time.time()`).
+- **Отсутствие времени при загрузке** — теперь NTP-синхронизация выполняется в `boot.py` автоматически.
+
+### Проверено
+
+- **ESP32:** `[BOOT] Starting...` → `[NTP] SUCCESS!` → `main.py` при каждом включении.
+- **ESP32:** `machine.RTC().datetime()` возвращает правильную дату (`2026, 10, 26`).
+- **ESP32:** `umqtt.robust` с IP-адресом брокера — `MQTT connected`, `Subscribed! Waiting...`.
+- **Локальный Mosquitto:** сообщения доставляются между двумя Python-клиентами на ПК (`paho-mqtt`).
+
+### Коммиты
+
+- `058d680` — fix: mqtt_client на umqtt.robust; program_loader.validate_expires через RTC; boot.py с NTP-синхронизацией
+
+---
+
 ## [3.4.1] — 2026-10-22 — MQTT end-to-end принят
 
 **Статус:** ✅ MQTT-транспорт работает end-to-end (Executor → ESP32).

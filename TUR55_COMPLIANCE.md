@@ -118,7 +118,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | Проверка `command_id` (replay) | `validate_command_id` — FIFO на 100 | ✅ |
 | Сохранение между перезагрузками | NVS (`tur55_replay`) | ✅ |
 | Fallback без NVS (CPython) | RAM | ✅ |
-| Проверка `expires` | `validate_expires` — опционально | ⏳ |
+| Проверка `expires` | `validate_expires` — RTC, автоматически | ✅ |
 
 **Логика проверок** (порядок):
 
@@ -128,6 +128,16 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 4. `validate_runtime_constraints`
 5. `validate_expires` (опционально, только при `time_synced`)
 6. `validate_command_id` (последним, чтобы не «сжечь» битым пакетом)
+
+### Обновление раздела 5 (NTP и `expires`) — v3.5.0
+
+С версии **v3.5.0** (26.10.2026) синхронизация времени выполняется **автоматически при каждом включении** ESP32:
+
+1. **`boot.py`** — при загрузке подключается к Wi-Fi и синхронизирует время по NTP (по IP-адресам Google, Cloudflare, NIST). 3 попытки на каждый сервер. При неудаче — перезагрузка.
+2. **`program_loader.py::validate_expires`** — использует **`machine.RTC().datetime()`** вместо `time.time()` (обход бага MicroPython 1.24.1, см. `DECISIONS_LOG.md` решение №33).
+3. **Результат:** проверка `expires` работает **всегда** (а не только когда время было установлено вручную).
+
+**Статус раздела 5:** ✅ **ЗАКРЫТО** (полностью автоматизировано).
 
 **Итог по разделу 5:** ✅ **закрыто** (с оговоркой про `expires`)
 
@@ -204,7 +214,7 @@ SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 | End-to-end (physical) | `Auto-found packet: programs/program.enc` | ✅ |
 
 **Топик:** `tur55/device/esp32_001`
-**Брокер:** `broker.hivemq.com` (публичный)
+**Брокер:** `broker.emqx.io` (публичный) / локальный Mosquitto
 **Папка:** `programs/program.enc` (офлайн, флешка / USB)
 
 **Итог:** ✅ **закрыто** (тезис 8 TUR55 — Transport Freedom: MQTT + physical)
