@@ -279,6 +279,26 @@ Since **v3.5.0** (2026-10-26), time synchronization is performed **automatically
 
 ---
 
+### Testing Note: Resetting Replay Protection (NVS)
+
+When testing with the same `command_id` (e.g., a transaction hash), ESP32 may reject the packet with `Command replay detected`. To manually clear the NVS history via `mpremote`, run:
+
+```python
+import esp32
+nvs = esp32.NVS("tur55_replay")
+try:
+    nvs.erase_key("used_ids")
+    nvs.commit()
+    print("NVS cleared!")
+except OSError:
+    print("NVS is already empty.")
+```
+
+**Important:** This clears the entire command history. Use it only in a testing environment, never in production.
+
+
+---
+
 ## Known Limitations
 
 1. **eFuse** — not implemented (**Gold requirement**, not Bronze). Keys are in `esp32_private_key.json`.

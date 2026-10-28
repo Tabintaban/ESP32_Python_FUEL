@@ -12,7 +12,7 @@ import time
 import os
 import secrets
 
-BROKER_IP = "192.168.0.100"
+BROKER_IP = "192.168.0.103"
 BROKER_PORT = 1883
 TOPIC = "tur55/device/esp32_001"
 CLIENT_ID = "esp32_direct"
