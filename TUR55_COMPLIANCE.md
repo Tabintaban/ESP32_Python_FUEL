@@ -1,304 +1,301 @@
-# TUR55_COMPLIANCE — таблица соответствия стандарту
 
-**Проект:** ESP32_Python_FUEL
-**Стандарт:** TUR55 (Trust Unified Regulation) — Open Standard
-**Автор стандарта:** NOMOS-H
-**Дата фиксации стандарта:** 2026-04-10
-**Репозиторий стандарта:** https://github.com/Tabintaban/Protocol_TUR55
-**Текущий статус:** **~95% TUR55/Bronze** (Bronze закрыт)
-**Последнее обновление:** 2026-10-16
+# TUR55_COMPLIANCE — Standard Compliance Table
+
+**Project:** ESP32_Python_FUEL
+**Standard:** TUR55 (Trust Unified Regulation) — Open Standard
+**Standard Author:** NOMOS-H
+**Standard Fixation Date:** 2026-04-10
+**Standard Repository:** https://github.com/Tabintaban/Protocol_TUR55
+**Current Status:** **~95% TUR55/Bronze** (Bronze closed)
+**Last Updated:** 2026-10-16
 
 ---
 
-## О стандарте TUR55
+## About the TUR55 Standard
 
-**TUR55** — открытый стандарт для выполнения блокчейн-команд на IoT-устройствах (ESP32/MicroPython). Blockchain-agnostic, transport-independent, sandboxed execution.
+**TUR55** is an open standard for executing blockchain commands on IoT devices (ESP32/MicroPython). Blockchain-agnostic, transport-independent, sandboxed execution.
 
-### Четыре слоя архитектуры
+### Four Architecture Layers
 
-| Слой | Назначение |
+| Layer | Purpose |
 |---|---|
-| **Event Layer** | Триггер из смарт-контракта |
-| **Executor Layer** | Формирует зашифрованный пакет |
-| **Delivery Layer** | Доставка (MQTT, HTTP, BLE, LoRaWAN, QR) |
-| **Execution Layer** | Песочница, где скрипт безопасно исполняется |
+| **Event Layer** | Trigger from a smart contract |
+| **Executor Layer** | Builds the encrypted packet |
+| **Delivery Layer** | Delivery (MQTT, HTTP, BLE, LoRaWAN, QR) |
+| **Execution Layer** | Sandbox where the script is safely executed |
 
-**ESP32_Python_FUEL реализует `Execution Layer (Layer 4)`.**
+**ESP32_Python_FUEL implements `Execution Layer (Layer 4)`.**
 
 ---
 
-## Криптография (раздел 4)
+## Cryptography (Section 4)
 
-| Требование | Стандарт | Реализация | Статус |
+| Requirement | Standard | Implementation | Status |
 |---|---|---|---|
-| Симметричное шифрование | AES-256-GCM | `gcm` C-модуль на mbedTLS | ✅ **NIST 3/3 на ESP32** |
-| Подпись | Ed25519 **или** secp256k1 | ECDSA secp256k1 (`usecp256k1`) | ✅ |
-| Асимметричное шифрование | RSA-OAEP | `ucryptography` | ✅ |
-| Хэш | BLAKE2s | `ucryptography` | ✅ |
-| Хранение ключей | eFuse / Secure Element | `esp32_private_key.json` | ⏳ **Gold уровень** |
+| Symmetric encryption | AES-256-GCM | `gcm` C-module on mbedTLS | ✅ **NIST 3/3 on ESP32** |
+| Signature | Ed25519 **or** secp256k1 | ECDSA secp256k1 (`usecp256k1`) | ✅ |
+| Asymmetric encryption | RSA-OAEP | `ucryptography` | ✅ |
+| Hash | BLAKE2s | `ucryptography` | ✅ |
+| Key storage | eFuse / Secure Element | `esp32_private_key.json` | ⏳ **Gold level** |
 
-**Итог по разделу 4:** ✅ 4 из 5 для Bronze (eFuse — **требование Gold**, не Bronze)
+**Section 4 Result:** ✅ 4 out of 5 for Bronze (eFuse is a **Gold requirement**, not Bronze)
 
 ---
 
-## Формат пакета TUR55 (раздел 3.4)
+## TUR55 Packet Format (Section 3.4)
 
-**Реализация:** `tur55_packet.py`
+**Implementation:** `tur55_packet.py`
 
-### Структура
+### Structure
 
 ```
-HEADER       8 байт (magic "TUR5", version, flags)
-PUBKEY       length (1) + data (33 байта compressed secp256k1)
-SESSION_KEY  length (2) + data (RSA-OAEP encrypted, ~256 байт)
+HEADER       8 bytes (magic "TUR5", version, flags)
+PUBKEY       length (1) + data (33 bytes compressed secp256k1)
+SESSION_KEY  length (2) + data (RSA-OAEP encrypted, ~256 bytes)
 SCRIPT       iv (12) + length (4) + data (AES-GCM) + tag (16)
 SIGNATURE    length (2) + data (DER-encoded ECDSA secp256k1)
 ```
 
-### Что покрывается подписью
+### What is covered by the signature
 
-**Подпись:** `HEADER + PUBKEY + SESSION_KEY + SCRIPT`
-**AAD для GCM:** `HEADER + PUBKEY + SESSION_KEY`
+**Signature:** `HEADER + PUBKEY + SESSION_KEY + SCRIPT`
+**AAD for GCM:** `HEADER + PUBKEY + SESSION_KEY`
 
-### Соответствие
+### Compliance
 
-| Требование | Статус |
+| Requirement | Status |
 |---|---|
-| HEADER с magic и version | ✅ |
-| Публичный ключ экзекутора | ✅ |
-| Сессионный ключ через RSA-OAEP | ✅ |
-| Скрипт через AES-256-GCM | ✅ |
-| Подпись ECDSA secp256k1 | ✅ |
+| HEADER with magic and version | ✅ |
+| Executor public key | ✅ |
+| Session key via RSA-OAEP | ✅ |
+| Script via AES-256-GCM | ✅ |
+| ECDSA secp256k1 signature | ✅ |
 | Tamper detection | ✅ |
 | Round-trip CPython → ESP32 | ✅ |
 
-**Итог по разделу 3.4:** ✅ полностью
+**Section 3.4 Result:** ✅ fully compliant
 
 ---
 
-## Конверт TUR55 (раздел 3.2)
+## TUR55 Envelope (Section 3.2)
 
-**Реализация:** `program_loader.py` (валидация)
+**Implementation:** `program_loader.py` (validation)
 
-### Обязательные поля
+### Required Fields
 
-| Поле | Тип | Статус |
+| Field | Type | Status |
 |---|---|---|
 | `tur55_version` | str | ✅ |
-| `command_id` | str (непустая) | ✅ |
+| `command_id` | str (non-empty) | ✅ |
 | `device_id` | str | ✅ |
 | `source` | dict | ✅ |
 | `execution` | dict | ✅ |
 | `custom_data` | dict | ✅ |
 
-### Поля `execution`
+### `execution` Fields
 
-| Поле | Тип | Статус |
+| Field | Type | Status |
 |---|---|---|
 | `runtime_limit_ms` | int | ✅ |
 | `memory_limit_kb` | int | ✅ |
 | `permissions` | list | ✅ |
-| `setup` | list (строк) | ✅ |
-| `loop_logic` | list (строк) | ✅ |
-| `functions` | list (строк) | ✅ |
-| `expires` | int (опционально) | ✅ |
-| `user_wallet` | str | ✅ (не валидируется) |
-| `amount` | float | ✅ (не валидируется) |
+| `setup` | list (of strings) | ✅ |
+| `loop_logic` | list (of strings) | ✅ |
+| `functions` | list (of strings) | ✅ |
+| `expires` | int (optional) | ✅ |
+| `user_wallet` | str | ✅ (not validated) |
+| `amount` | float | ✅ (not validated) |
 
-**Итог по разделу 3.2:** ✅ полностью
+**Section 3.2 Result:** ✅ fully compliant
 
 ---
 
-## Replay protection (раздел 5)
+## Replay Protection (Section 5)
 
-**Реализация:** `program_loader.py`
+**Implementation:** `program_loader.py`
 
-| Требование | Реализация | Статус |
+| Requirement | Implementation | Status |
 |---|---|---|
-| Проверка `command_id` (replay) | `validate_command_id` — FIFO на 100 | ✅ |
-| Сохранение между перезагрузками | NVS (`tur55_replay`) | ✅ |
-| Fallback без NVS (CPython) | RAM | ✅ |
-| Проверка `expires` | `validate_expires` — RTC, автоматически | ✅ |
+| `command_id` check (replay) | `validate_command_id` — FIFO of 100 | ✅ |
+| Persistence across reboots | NVS (`tur55_replay`) | ✅ |
+| Fallback without NVS (CPython) | RAM | ✅ |
+| `expires` check | `validate_expires` — RTC, automatic | ✅ |
 
-**Логика проверок** (порядок):
+**Validation Logic** (order):
 
-1. `parse_packet` — подпись, GCM
-2. `validate_program_structure` — конверт 3.2
+1. `parse_packet` — signature, GCM
+2. `validate_program_structure` — envelope 3.2
 3. `validate_permissions`
 4. `validate_runtime_constraints`
-5. `validate_expires` (опционально, только при `time_synced`)
-6. `validate_command_id` (последним, чтобы не «сжечь» битым пакетом)
+5. `validate_expires` (optional, only when `time_synced`)
+6. `validate_command_id` (last, to avoid "burning" a `command_id` with a corrupted packet)
 
-### Обновление раздела 5 (NTP и `expires`) — v3.5.0
+### Section 5 Update (NTP and `expires`) — v3.5.0
 
-С версии **v3.5.0** (26.10.2026) синхронизация времени выполняется **автоматически при каждом включении** ESP32:
+Since **v3.5.0** (2026-10-26), time synchronization is performed **automatically on every ESP32 boot**:
 
-1. **`boot.py`** — при загрузке подключается к Wi-Fi и синхронизирует время по NTP (по IP-адресам Google, Cloudflare, NIST). 3 попытки на каждый сервер. При неудаче — перезагрузка.
-2. **`program_loader.py::validate_expires`** — использует **`machine.RTC().datetime()`** вместо `time.time()` (обход бага MicroPython 1.24.1, см. `DECISIONS_LOG.md` решение №33).
-3. **Результат:** проверка `expires` работает **всегда** (а не только когда время было установлено вручную).
+1. **`boot.py`** — on boot, connects to Wi-Fi and syncs time via NTP (using IP addresses of Google, Cloudflare, NIST). 3 attempts per server. Reboots on failure.
+2. **`program_loader.py::validate_expires`** — uses **`machine.RTC().datetime()`** instead of `time.time()` (workaround for MicroPython 1.24.1 bug, see `DECISIONS_LOG.md` decision #33).
+3. **Result:** `expires` validation works **always** (not only when time was set manually).
 
-**Статус раздела 5:** ✅ **ЗАКРЫТО** (полностью автоматизировано).
+**Section 5 Status:** ✅ **CLOSED** (fully automated).
 
-**Итог по разделу 5:** ✅ **закрыто** (с оговоркой про `expires`)
+**Section 5 Result:** ✅ **closed** (with a note on `expires`)
 
-**NVS:** `used_command_ids` сохраняются в NVS namespace `tur55_replay`. Проверено на ESP32 — replay переживает Ctrl+D. Fallback на RAM (CPython).
+**NVS:** `used_command_ids` are stored in the NVS namespace `tur55_replay`. Verified on ESP32 — replay protection survives Ctrl+D. Fallback to RAM (CPython).
 
 ---
 
-## Песочница (раздел 6)
+## Sandbox (Section 6)
 
-**Реализация:** `execution_sandbox.py`, `memory_optimizer.py`
+**Implementation:** `execution_sandbox.py`, `memory_optimizer.py`
 
-| Требование | Реализация | Статус |
+| Requirement | Implementation | Status |
 |---|---|---|
-| Whitelist модулей | `SafeImporter` | ✅ |
-| Запрет опасных builtins | `eval`, `exec`, `compile`, `open`, `getattr` | ✅ |
-| Таймаут | Кооперативный (`machine.Timer`) | ✅ |
-| Лимит памяти | `_check_memory_usage` | ✅ |
-| Лимиты из пакета | `limit_resources` | ✅ |
-| Запрет относительных импортов | `level > 0` | ✅ |
+| Module whitelist | `SafeImporter` | ✅ |
+| Blocking dangerous builtins | `eval`, `exec`, `compile`, `open`, `getattr` | ✅ |
+| Timeout | Cooperative (`machine.Timer`) | ✅ |
+| Memory limit | `_check_memory_usage` | ✅ |
+| Limits from packet | `limit_resources` | ✅ |
+| Blocking relative imports | `level > 0` | ✅ |
 
-### Whitelist модулей
+### Module Whitelist
 
-**Разрешены:**
+**Allowed:**
 - `machine`, `time`, `math`, `struct`, `json`, `gc`
 
-**Запрещены:**
+**Blocked:**
 - `sys`, `_thread`, `select`, `socket`, `ssl`, `network`, `uos`
 
-**Итог по разделу 6:** ✅ полностью
+**Section 6 Result:** ✅ fully compliant
 
-**Оговорка:** таймаут **кооперативный** — не прерывает зависший C-код. Hard-guarantee отсутствует.
-
----
-
-## Лог в UART (TUR55/Bronze, раздел 9)
-
-**Реализация:** `main.py` (`Logger`) → `print()` → `stdout` → **UART0**
-
-**TUR55 раздел 9** требует для **Bronze**: приём пакета, дешифровка, исполнение, **лог в UART**.
-
-| Требование | Реализация | Статус |
-|---|---|---|
-| Лог в UART | `Logger` (5 уровней: DEBUG–CRITICAL) | ✅ |
-| События запуска | `=== TUR55 Pipeline ===`, `Init ProgramLoader` | ✅ |
-| События пакета | `Auto-found packet`, `command_id`, `device_id` | ✅ |
-| События исполнения | `setup success`, `loop iterations`, `loop time_ms` | ✅ |
-| События ошибок | `[ERROR] Validation failed`, `[WARNING]` | ✅ |
-| События завершения | `=== Done ===` | ✅ |
-
-**Как работает:**
-- На ESP32: `print()` → **UART0** → USB-UART → COM-порт → miniterm
-- На CPython: `print()` → **консоль** (для отладки)
-
-**Проверено:** логи видны в `py -m serial.tools.miniterm COM3 115200`
-
-**Итог:** ✅ **закрыто** (требование TUR55/Bronze выполнено)
+**Note:** The timeout is **cooperative** — it does not interrupt a hanging C-code. Hard guarantee is absent.
 
 ---
 
+## UART Logging (TUR55/Bronze, Section 9)
 
+**Implementation:** `main.py` (`Logger`) → `print()` → `stdout` → **UART0**
 
-## Delivery Layer (сетевой слой + физическая доставка)
+**TUR55 Section 9** requires for **Bronze**: packet reception, decryption, execution, **UART logging**.
 
-**Реализация:** `mqtt_client.py`, `mqtt_publisher.py`, `main._find_packet()`
-
-| Требование | Реализация | Статус |
+| Requirement | Implementation | Status |
 |---|---|---|
-| Приём по сети | `MQTTReceiver` (umqtt.simple) | ✅ |
-| Отправка по сети | `MQTTPublisher` (paho-mqtt) | ✅ |
-| Wi-Fi подключение | `network.WLAN` | ✅ |
-| **Физическая доставка** | **`programs/program.enc`** | **✅** |
-| **Автопоиск пакета** | **`main._find_packet()`** | **✅** |
-| End-to-end (MQTT) | ESP32 принял 862 байта | ✅ |
+| UART logging | `Logger` (5 levels: DEBUG–CRITICAL) | ✅ |
+| Startup events | `=== TUR55 Pipeline ===`, `Init ProgramLoader` | ✅ |
+| Packet events | `Auto-found packet`, `command_id`, `device_id` | ✅ |
+| Execution events | `setup success`, `loop iterations`, `loop time_ms` | ✅ |
+| Error events | `[ERROR] Validation failed`, `[WARNING]` | ✅ |
+| Completion events | `=== Done ===` | ✅ |
+
+**How it works:**
+- On ESP32: `print()` → **UART0** → USB-UART → COM port → miniterm
+- On CPython: `print()` → **console** (for debugging)
+
+**Verified:** logs are visible in `py -m serial.tools.miniterm COM3 115200`
+
+**Result:** ✅ **closed** (TUR55/Bronze requirement met)
+
+---
+
+## Delivery Layer (Network + Physical Delivery)
+
+**Implementation:** `mqtt_client.py`, `mqtt_publisher.py`, `main._find_packet()`
+
+| Requirement | Implementation | Status |
+|---|---|---|
+| Network reception | `MQTTReceiver` (umqtt.simple/robust) | ✅ |
+| Network sending | `MQTTPublisher` (paho-mqtt) | ✅ |
+| Wi-Fi connection | `network.WLAN` | ✅ |
+| **Physical delivery** | **`programs/program.enc`** | **✅** |
+| **Packet auto-discovery** | **`main._find_packet()`** | **✅** |
+| End-to-end (MQTT) | ESP32 received 862 bytes | ✅ |
 | End-to-end (physical) | `Auto-found packet: programs/program.enc` | ✅ |
 
-**Топик:** `tur55/device/esp32_001`
-**Брокер:** `broker.emqx.io` (публичный) / локальный Mosquitto
-**Папка:** `programs/program.enc` (офлайн, флешка / USB)
+**Topic:** `tur55/device/esp32_001`
+**Broker:** `broker.emqx.io` (public) / local Mosquitto
+**Folder:** `programs/program.enc` (offline, flash drive / USB)
 
-**Итог:** ✅ **закрыто** (тезис 8 TUR55 — Transport Freedom: MQTT + physical)
+**Result:** ✅ **closed** (TUR55 thesis 8 — Transport Freedom: MQTT + physical)
 
 ---
 
+## TUR55 Manifest Theses
 
-## Тезисы манифеста TUR55
-
-| # | Тезис | Требование | Реализация |
+| # | Thesis | Requirement | Implementation |
 |---|---|---|---|
-| 5 | Sandbox | Изолированное выполнение | ✅ |
+| 5 | Sandbox | Isolated execution | ✅ |
 | 6 | Cryptographic Truth | AES-256-GCM + secp256k1 | ✅ |
-| 7 | Blockchain Agnosticism | Не привязан к блокчейну | ✅ (не блокчейн-специфичен) |
+| 7 | Blockchain Agnosticism | Not tied to a specific blockchain | ✅ (blockchain-agnostic) |
 | 8 | Transport Freedom | Transport-independent | ✅ (`load_program(bytes)` + MQTT + `programs/`) |
-| 9 | Universal License Token | — | ❌ (не в Layer 4) |
-| 11 | Secure Elements | eFuse / hardware key storage | ⏳ **Gold уровень** |
+| 9 | Universal License Token | — | ❌ (not in Layer 4) |
+| 11 | Secure Elements | eFuse / hardware key storage | ⏳ **Gold level** |
 
-**Итог по тезисам:** ✅ 5 из 6 для Bronze (eFuse — **требование Gold**)
+**Theses Result:** ✅ 5 out of 6 for Bronze (eFuse is a **Gold requirement**)
 
 ---
 
-## Сводная таблица
+## Summary Table
 
-| Раздел | Требование | Статус |
+| Section | Requirement | Status |
 |---|---|---|
-| **3.2** | Конверт TUR55 | ✅ |
-| **3.4** | Формат пакета | ✅ |
+| **3.2** | TUR55 envelope | ✅ |
+| **3.4** | Packet format | ✅ |
 | **4** | AES-256-GCM | ✅ NIST 3/3 |
 | **4** | ECDSA secp256k1 | ✅ |
 | **4** | RSA-OAEP | ✅ |
 | **4** | BLAKE2s | ✅ |
-| **4** | **eFuse** | ⏳ Gold (не Bronze) |
+| **4** | **eFuse** | ⏳ Gold (not Bronze) |
 | **5** | `command_id` (replay) | ✅ |
-| **5** | NVS (переживает перезагрузку) | ✅ |
+| **5** | NVS (persists across reboot) | ✅ |
 | **5** | `expires` | ✅ (NTP) |
 | **6** | Whitelist | ✅ |
-| **6** | Таймаут | ✅ (кооперативный) |
-| **6** | Лимит памяти | ✅ |
+| **6** | Timeout | ✅ (cooperative) |
+| **6** | Memory limit | ✅ |
 | **Delivery** | MQTT + physical | ✅ |
-| **9** | **Лог в UART** | ✅ |
+| **9** | **UART logging** | ✅ |
 
 ---
 
-## Что закрыто
+## What is closed
 
-- ✅ **Раздел 3.2** — конверт TUR55
-- ✅ **Раздел 3.4** — формат пакета (round-trip работает)
-- ✅ **Раздел 4** — AES-256-GCM, ECDSA secp256k1, RSA-OAEP, BLAKE2s
-- ✅ **Раздел 5** — replay protection + NVS
-- ✅ **Раздел 6** — whitelist, таймаут, лимит памяти
-- ✅ **Delivery Layer** — MQTT + physical (`programs/`) (тезис 8, Transport Freedom)
-- ✅ **Лог в UART** — Logger (раздел 9, Bronze)
+- ✅ **Section 3.2** — TUR55 envelope
+- ✅ **Section 3.4** — packet format (round-trip works)
+- ✅ **Section 4** — AES-256-GCM, ECDSA secp256k1, RSA-OAEP, BLAKE2s
+- ✅ **Section 5** — replay protection + NVS
+- ✅ **Section 6** — whitelist, timeout, memory limit
+- ✅ **Delivery Layer** — MQTT + physical (`programs/`) (thesis 8, Transport Freedom)
+- ✅ **UART logging** — Logger (section 9, Bronze)
 
-**TUR55/Bronze — закрыт полностью.**
+**TUR55/Bronze — fully closed.**
 
-## Что осталось (для Gold)
+## What remains (for Gold)
 
-| # | Задача | Раздел TUR55 | Приоритет |
+| # | Task | TUR55 Section | Priority |
 |---|---|---|---|
-| 1 | **eFuse** для ключей | 4 | **Gold уровень** (не Bronze) |
-| 2 | **Secure boot** | 9 | **Gold уровень** |
-| 3 | **Документация** (README, BUILD_GCM) | — | низкий |
+| 1 | **eFuse** for keys | 4 | **Gold level** (not Bronze) |
+| 2 | **Secure boot** | 9 | **Gold level** |
+| 3 | **Documentation** (README, BUILD_GCM) | — | low |
 
 ---
 
-## Известные ограничения
+## Known Limitations
 
-1. **eFuse** — не реализован (**требование Gold**, не Bronze). Ключи в `esp32_private_key.json`.
-2. **Кооперативный таймаут** — не прерывает зависший C-код. Hard-guarantee отсутствует.
-3. **`used_command_ids` в NVS** — сохраняется между перезагрузками. ✅
-4. **`expires` проверяется** — через NTP. ✅
-5. **MQTT / сетевой стек** — реализованы. ✅
-6. **Физическая доставка** — реализована (`programs/program.enc`). ✅
-7. **Лог в UART** — реализован (Logger → stdout → UART0). ✅
-8. **`os.dupterm`** — не используется (нет перехвата `print`).
+1. **eFuse** — not implemented (**Gold requirement**, not Bronze). Keys are in `esp32_private_key.json`.
+2. **Cooperative timeout** — does not interrupt a hanging C-code. Hard guarantee is absent.
+3. **`used_command_ids` in NVS** — persists across reboots. ✅
+4. **`expires` is checked** — via NTP. ✅
+5. **MQTT / network stack** — implemented. ✅
+6. **Physical delivery** — implemented (`programs/program.enc`). ✅
+7. **UART logging** — implemented (Logger → stdout → UART0). ✅
+8. **`os.dupterm`** — not used (no `print` interception).
 
 ---
 
-## Ссылки
+## Links
 
 - **TUR55 Standard:** https://github.com/Tabintaban/Protocol_TUR55
 - **ESP32_Python_FUEL:** https://github.com/Tabintaban/ESP32_Python_FUEL
 - **NIST SP 800-38D:** https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
 - **MicroPython v1.24.1:** https://github.com/micropython/micropython/releases/tag/v1.24.1
 - **ESP-IDF v5.2.2:** https://github.com/espressif/esp-idf/tree/v5.2.2
-
