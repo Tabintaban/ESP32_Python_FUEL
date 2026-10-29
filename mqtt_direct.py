@@ -15,7 +15,7 @@ import secrets
 BROKER_IP = "192.168.0.103"
 BROKER_PORT = 1883
 TOPIC = "tur55/device/esp32_001"
-CLIENT_ID = "esp32_direct"
+CLIENT_ID = "esp32_direct_" + str(int(time.time()))
 OUTPUT_FILE = "programs/program.enc"
 
 def connect_wifi():
