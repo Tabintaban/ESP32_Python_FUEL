@@ -6,6 +6,45 @@ All notable changes to the ESP32_Python_FUEL project will be documented in this 
 
 ---
 
+## [3.5.1] — 2026-10-30 — End-to-end Sepolia → ESP32, `mpremote` 1.30
+
+**Статус:** ✅ Сквозная цепочка (Sepolia → Executor → ESP32) работает. Обход багов `mpremote` и RPC.
+
+### Added
+
+- **`mqtt_direct.py`** — MQTT-клиент на чистом сокете (обход бага `getaddrinfo` в MicroPython).
+  - Подключается к локальному Mosquitto по IP.
+  - Отправляет `CONNECT`, `SUBSCRIBE`, слушает `PUBLISH`.
+  - Сохраняет пакет в `programs/program.enc`.
+- **`boot.py`** — автоматическая NTP-синхронизация при каждом включении (уже было в v3.5.0, но теперь заморожено в прошивку).
+
+### Changed
+
+- **`mqtt_client.py`** — уникальный `CLIENT_ID` (с `time.time()`) для обхода конфликта соединений.
+- **`mqtt_direct.py`** — правильное чтение `SUBACK` (через `read_remaining_length`, а не фиксированные 5 байт).
+- **`manifest.py`** — добавлены `boot.py` и `mqtt_direct.py` в заморозку.
+- **`mpremote`** — обновлен до версии **1.30.0rc0.post101** (обход бага `could not enter raw repl` в 1.29.0).
+
+### Fixed
+
+- **`could not enter raw repl`** — обновление `mpremote` до 1.30.0rc0.post101.
+- **`ECONNABORTED`** — уникальный `CLIENT_ID` в `mqtt_direct.py`.
+- **`invalid block range params`** — в Executor `get_logs` по `block_hash` вместо `from_block`/`to_block`.
+
+### Проверено
+
+- **2026-10-30:** Смарт-контракт в Sepolia → Executor → локальный MQTT → ESP32 → **светодиод мигнул 40 раз** (40 секунд) и выключился.
+- **ESP32:** `[INFO] setup success: True`, `loop iterations: 40`, `=== Done ===`.
+- **Прошивка:** собрана с `manifest.py` (все модули заморожены), `mpremote 1.30.0rc0.post101`.
+
+### Коммиты
+
+- `add9555` — fix(mqtt): уникальный CLIENT_ID (обход конфликта соединений)
+- `b8d6b9f` — build: manifest.py с boot.py и mqtt_direct.py в freeze
+- (в TUR55_Executor) `7b587a8` — fix(delivery): wait_for_publish в MQTT; inputfiles: duration_sec 20 (для видео)
+
+---
+
 ## [3.5.0] — 2026-10-26 — Автоматический NTP, RTC-проверка, `umqtt.robust`
 
 **Статус:** ✅ Синхронизация времени при загрузке, обход багов MicroPython 1.24.1.

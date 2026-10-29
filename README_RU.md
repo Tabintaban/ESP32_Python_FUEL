@@ -128,7 +128,9 @@ sandbox                    ── execution_sandbox (whitelist + коопера�
 | **Python (WSL)** | 3.10.12 | Требование ESP-IDF |
 
 **ESP-IDF v5.1.2 и v5.3.2 — НЕ подходят.**
-
+**`mpremote` >= 1.30.0rc0.post101** (обязательно).
+  - Причина: версия 1.29.0 имеет баг `could not enter raw repl` на ESP32.
+  - Установка: `py -m pip install mpremote==1.30.0rc0.post101`.
 ---
 
 ## Быстрый старт
